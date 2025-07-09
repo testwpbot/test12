@@ -38,7 +38,7 @@ cmd(
       )).join("\n\n");
 
       const caption = `  
-Your youtube search results
+*_Your youtube search results
 ─────────────────────────
 🔎 *Query*: ${q}
 ${formattedResults}
