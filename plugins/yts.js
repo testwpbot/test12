@@ -11,7 +11,7 @@ cmd(
     filename: __filename,
   },
   async (
-    robin,
+    danuwa,
     mek,
     m,
     {
@@ -32,7 +32,7 @@ cmd(
         return reply("*No results found on YouTube.* ☹️");
       }
 
-      const results = search.videos.slice(0, 5); // Top 5 results
+      const results = search.videos.slice(0, 10); 
       let formattedResults = results.map((v, i) => (
         `🎬 *${i + 1}. ${v.title}*\n📅 ${v.ago} | ⌛ ${v.timestamp} | 👁️ ${v.views.toLocaleString()} views\n🔗 ${v.url}`
       )).join("\n\n");
@@ -44,11 +44,11 @@ Your youtube search results
 ${formattedResults}
    `;
 
-      await robin.sendMessage(
+      await danuwa.sendMessage(
         from,
         {
           image: {
-            url: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/yts.png?raw=true", // Optional: update this if you want a specific thumbnail
+            url: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/yts.png?raw=true",
           },
           caption,
         },
