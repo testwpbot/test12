@@ -83,7 +83,7 @@ Your fb video
         { quoted: mek }
       );
 
-      return reply("*Thank you for using DANUWA-MD");
+      return reply("Thank you for using DANUWA-MD");
     } catch (e) {
       console.error(e);
       reply(`*Error:* ${e.message || e}`);
