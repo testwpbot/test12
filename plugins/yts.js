@@ -37,13 +37,18 @@ cmd(
         `🎬 *${i + 1}. ${v.title}*\n📅 ${v.ago} | ⌛ ${v.timestamp} | 👁️ ${v.views.toLocaleString()} views\n🔗 ${v.url}`
       )).join("\n\n");
 
-      const caption = `Your youtube search results`;
+      const caption = `  
+Your youtube search results
+─────────────────────────
+🔎 *Query*: ${q}
+${formattedResults}
+   `;
 
       await robin.sendMessage(
         from,
         {
           image: {
-            url: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/yts.png?raw=true",
+            url: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/yts.png?raw=true", // Optional: update this if you want a specific thumbnail
           },
           caption,
         },
