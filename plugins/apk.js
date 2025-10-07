@@ -47,7 +47,7 @@ cmd(
         { quoted: mek }
       );
 
-      await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
+      await test.sendMessage(from, { react: { text: "✅", key: mek.key } });
     } catch (err) {
       console.error("❌ APK Downloader Error:", err);
       reply("❌ *An error occurred while downloading the APK.*");
