@@ -4,17 +4,17 @@ const axios = require("axios");
 cmd(
   {
     pattern: "apk",
-    alias: [],
+    alias: ["android", "af"],
     react: "📍",
     desc: "Download your favourite apk",
     category: "download",
     filename: __filename,
   },
-  async (conn, mek, m, { q, reply, from }) => {
+  async (test, mek, m, { q, reply, from }) => {
     try {
       if (!q) return reply("❌ *Please provide an app name to search!*");
 
-      await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
+      await test.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
       const apiUrl = `http://ws75.aptoide.com/api/7/apps/search/query=${encodeURIComponent(q)}/limit=1`;
       const { data } = await axios.get(apiUrl);
@@ -28,7 +28,7 @@ cmd(
       
       const caption = `APK DOWNLOADER`;
 
-      await conn.sendMessage(
+      await test.sendMessage(
         from,
         {
           image: { url: app.icon },
@@ -37,7 +37,7 @@ cmd(
         { quoted: mek }
       );
 
-      await conn.sendMessage(
+      await test.sendMessage(
         from,
         {
           document: { url: app.file.path_alt },
