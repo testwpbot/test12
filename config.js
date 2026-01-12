@@ -5,7 +5,7 @@ function convertToBool(text, fault = 'true') {
     return text === fault ? true : false;
 }
 module.exports = {
-SESSION_ID: process.env.SESSION_ID || "DILSHAN-MD|iVIA3YSa#AymYtUREbF_cYYMn2b0h7m1OBzgIYOy_1s59YQTB31I",
+SESSION_ID: process.env.SESSION_ID || "YNcWSZrR#vLFCoQRsfQjc2Tbw2S733LwDqiQ__sKqThOogJZS58s",
 ALIVE_IMG: process.env.ALIVE_IMG || "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/DANUWA-MD.png?raw=true",
 ALIVE_MSG: process.env.ALIVE_MSG || "*Hello👋 DANUWA-MD Is Alive Now😍*",
 BOT_OWNER: '94774915917',  // Replace with the owner's phone number
