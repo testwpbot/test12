@@ -40,23 +40,7 @@ async function ensureSessionFile() {
     console.log("🔄 creds.json not found. Downloading session from MEGA...");
 
     const sessdata = config.SESSION_ID;
-    
-    // Extract the real file ID by splitting at the | character
-    let realFileId = sessdata;
-    if (sessdata.includes('|')) {
-      realFileId = sessdata.split('|')[1];
-      console.log(`🔧 Extracted real file ID from custom format`);
-      console.log(`📁 Original: ${sessdata}`);
-      console.log(`🔑 Real File ID: ${realFileId}`);
-    } else {
-      console.log(`🔧 Using file ID directly: ${realFileId}`);
-    }
-
-    // Construct MEGA URL with the REAL file ID (without DILSHAN-MD| prefix)
-    const megaUrl = `https://mega.nz/file/${realFileId}`;
-    console.log(`🔗 Downloading from: ${megaUrl}`);
-
-    const filer = File.fromURL(megaUrl);
+    const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
 
     filer.download((err, data) => {
       if (err) {
