@@ -4,8 +4,7 @@ const yts = require("yt-search");
 const fs = require("fs");
 const path = require("path");
 
-const COOKIES = path.join(__dirname, "..", "cookies.txt"); // your cookies file in root
-
+// Use this function to search or return the URL directly
 async function getYoutubeUrl(query) {
   const isUrl = /(youtube\.com|youtu\.be)/i.test(query);
   if (isUrl) return query;
@@ -15,7 +14,12 @@ async function getYoutubeUrl(query) {
   return search.videos[0].url;
 }
 
-// -------------------- YTMP3 --------------------
+// Path to your cookies file (upload this to bot root)
+const COOKIES_FILE = path.join(__dirname, "../cookies.txt");
+
+// Realistic User-Agent to avoid bot detection
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
+
 cmd(
   {
     pattern: "ytmp3",
@@ -34,7 +38,7 @@ cmd(
 
       reply("⬇️ Downloading MP3... (yt-dlp + cookies)");
 
-      const cmdStr = `yt-dlp --cookies "${COOKIES}" -x --audio-format mp3 -o "%(title)s.%(ext)s" "${url}"`;
+      const cmdStr = `yt-dlp --cookies "${COOKIES_FILE}" --user-agent "${USER_AGENT}" -x --audio-format mp3 -o "%(title)s.%(ext)s" "${url}"`;
 
       exec(cmdStr, async (err, stdout, stderr) => {
         if (err) {
@@ -42,6 +46,7 @@ cmd(
           return reply("❌ Error while downloading audio!");
         }
 
+        // yt-dlp outputs: Destination: <filename>
         const match = stdout.match(/Destination: (.+\.mp3)/);
         if (!match) return reply("❌ Failed to find output file!");
 
@@ -66,12 +71,11 @@ cmd(
   }
 );
 
-// -------------------- YTMP4 --------------------
 cmd(
   {
     pattern: "ytmp4",
     alias: ["ytv", "video"],
-    desc: "Download YouTube MP4 using yt-dlp with cookies",
+    desc: "Download YouTube MP4 360p using yt-dlp with cookies",
     category: "download",
     filename: __filename,
   },
@@ -85,7 +89,7 @@ cmd(
 
       reply("⬇️ Downloading MP4 360p... (yt-dlp + cookies)");
 
-      const cmdStr = `yt-dlp --cookies "${COOKIES}" -f 18 -o "%(title)s_360p.%(ext)s" "${url}"`;
+      const cmdStr = `yt-dlp --cookies "${COOKIES_FILE}" --user-agent "${USER_AGENT}" -f 18 -o "%(title)s_360p.%(ext)s" "${url}"`;
 
       exec(cmdStr, async (err, stdout, stderr) => {
         if (err) {
