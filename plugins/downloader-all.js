@@ -2,6 +2,9 @@ const { cmd } = require("../command");
 const { exec } = require("child_process");
 const yts = require("yt-search");
 const fs = require("fs");
+const path = require("path");
+
+const COOKIES = path.join(__dirname, "..", "cookies.txt"); // your cookies file in root
 
 async function getYoutubeUrl(query) {
   const isUrl = /(youtube\.com|youtu\.be)/i.test(query);
@@ -12,11 +15,12 @@ async function getYoutubeUrl(query) {
   return search.videos[0].url;
 }
 
+// -------------------- YTMP3 --------------------
 cmd(
   {
     pattern: "ytmp3",
     alias: ["yta", "song"],
-    desc: "Download YouTube MP3 using yt-dlp",
+    desc: "Download YouTube MP3 using yt-dlp with cookies",
     category: "download",
     filename: __filename,
   },
@@ -28,11 +32,11 @@ cmd(
       const url = await getYoutubeUrl(q);
       if (!url) return reply("❌ No results found!");
 
-      reply("⬇️ Downloading MP3... (yt-dlp)");
+      reply("⬇️ Downloading MP3... (yt-dlp + cookies)");
 
-      const cmd = `yt-dlp -x --audio-format mp3 -o "%(title)s.%(ext)s" "${url}"`;
+      const cmdStr = `yt-dlp --cookies "${COOKIES}" -x --audio-format mp3 -o "%(title)s.%(ext)s" "${url}"`;
 
-      exec(cmd, async (err, stdout, stderr) => {
+      exec(cmdStr, async (err, stdout, stderr) => {
         if (err) {
           console.error(stderr);
           return reply("❌ Error while downloading audio!");
@@ -62,11 +66,12 @@ cmd(
   }
 );
 
+// -------------------- YTMP4 --------------------
 cmd(
   {
     pattern: "ytmp4",
     alias: ["ytv", "video"],
-    desc: "Download YouTube MP4 using yt-dlp",
+    desc: "Download YouTube MP4 using yt-dlp with cookies",
     category: "download",
     filename: __filename,
   },
@@ -78,10 +83,11 @@ cmd(
       const url = await getYoutubeUrl(q);
       if (!url) return reply("❌ No results found!");
 
-      reply("⬇️ Downloading MP4 360p... (yt-dlp)");
-      const cmd = `yt-dlp -f 18 -o "%(title)s_360p.%(ext)s" "${url}"`;
+      reply("⬇️ Downloading MP4 360p... (yt-dlp + cookies)");
 
-      exec(cmd, async (err, stdout, stderr) => {
+      const cmdStr = `yt-dlp --cookies "${COOKIES}" -f 18 -o "%(title)s_360p.%(ext)s" "${url}"`;
+
+      exec(cmdStr, async (err, stdout, stderr) => {
         if (err) {
           console.error(stderr);
           return reply("❌ Error while downloading video!");
