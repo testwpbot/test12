@@ -122,10 +122,11 @@ cmd(
 await bot.sendMessage(
   from,
   {
-    document: { url: data.url },
+    video: { url: data.url },
     mimetype: "video/mp4",
     fileName: data.filename || "youtube_video.mp4",
-    caption: "🎬 YouTube video (download as document)",
+    caption: "🎬 YouTube video",
+    gifPlayback: false,
   },
   { quoted: mek }
 );
