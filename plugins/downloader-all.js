@@ -119,14 +119,16 @@ cmd(
 
       if (!data?.url) return reply("❌ Failed to download video");
 
-      await bot.sendMessage(
-        from,
-        {
-          video: { url: data.url },
-          caption: "🎬 Download complete",
-        },
-        { quoted: mek }
-      );
+await bot.sendMessage(
+  from,
+  {
+    document: { url: data.url },
+    mimetype: "video/mp4",
+    fileName: data.filename || "youtube_video.mp4",
+    caption: "🎬 YouTube video (download as document)",
+  },
+  { quoted: mek }
+);
     } catch (e) {
       console.log("YTMP4 ERROR:", e);
       reply("❌ Error while downloading video");
