@@ -23,18 +23,8 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
 
-    # ✅ Install yt-dlp & ffmpeg for your bot
-    - name: Install yt-dlp & ffmpeg
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y yt-dlp ffmpeg
-
     - name: Install Dependencies
       run: npm install
-
-    # Optional: verify yt-dlp installation
-    - name: Check yt-dlp version
-      run: yt-dlp --version
 
     - name: Start WhatsApp Bot
       run: npm run start
