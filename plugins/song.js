@@ -1,103 +1,155 @@
-const { cmd, commands } = require("../command");
+
+const { cmd } = require("../command");
+const yt = require("@vreden/youtube_scraper");
+const he = require("he");
 const yts = require("yt-search");
-const { ytmp3 } = require("@vreden/youtube_scraper");
+
+async function findFirstVideo(query) {
+  const searchResult = await yts(query);
+  if (!searchResult?.videos?.length) return null;
+
+  const first = searchResult.videos[0];
+  return {
+    title: he.decode(first.title || "Unknown Title"),
+    url: first.url,
+  };
+}
 
 cmd(
   {
-    pattern: "song",
-    react: "🎶",
-    desc: "Download Song",
+    pattern: "ytmp3",
+    alias: ["yta", "song"],
+    react: "🎧",
+    desc: "Download YouTube Audio (by name or link)",
     category: "download",
     filename: __filename,
   },
-  async (
-    danuwa,
-    mek,
-    m,
-    {
-      from,
-      quoted,
-      body,
-      isCmd,
-      command,
-      args,
-      q,
-      isGroup,
-      sender,
-      senderNumber,
-      botNumber2,
-      botNumber,
-      pushname,
-      isMe,
-      isOwner,
-      groupMetadata,
-      groupName,
-      participants,
-      groupAdmins,
-      isBotAdmins,
-      isAdmins,
-      reply,
-    }
-  ) => {
+  async (danuwa, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("❌ *Please provide a song name or YouTube link*");
+      if (!q) return reply("*🎵 Give song name or the link*");
 
-      const search = await yts(q);
-      const data = search.videos[0];
-      const url = data.url;
+      let videoUrl = q.trim();
+      const ytRegex = /(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
 
-      let desc = `
-Song downloader
-🎬 *Title:* ${data.title}
-⏱️ *Duration:* ${data.timestamp}
-📅 *Uploaded:* ${data.ago}
-👀 *Views:* ${data.views.toLocaleString()}
-🔗 *Watch Here:* ${data.url}
+      if (!ytRegex.test(videoUrl)) {
+        reply("🔎 *searching youtube*");
+        const first = await findFirstVideo(videoUrl);
+        if (!first) return reply("❌ *No results found on YouTube!*");
+        videoUrl = first.url;
+        console.log("🎵 Found:", first.title);
+      }
+
+      reply("🎶 *found*");
+
+      const result = await yt.ytmp3(videoUrl, 128);
+      if (!result?.download?.url)
+        return reply("❌ *Failed to get MP3 link. Try again later!*");
+
+      const { metadata, download } = result;
+      const title = he.decode(metadata?.title || "Unknown Title");
+      const thumb = metadata?.thumbnail || metadata?.image || null;
+      const fileUrl = download.url;
+      const quality = download.quality || "128kbps";
+      const fileName = download.filename || `${title}.mp3`;
+
+      const desc = `
+🎵 *AUDIO DOWNLOADER*
+🎧 *Title:* ${title}
+📊 *Quality:* ${quality}
+🔗 *URL:* ${metadata?.url || videoUrl}
 `;
 
-      await danuwa.sendMessage(
-        from,
-        { image: { url: data.thumbnail }, caption: desc },
-        { quoted: mek }
-      );
-
-      const quality = "192";
-      const songData = await ytmp3(url, quality);
-
-      let durationParts = data.timestamp.split(":").map(Number);
-      let totalSeconds =
-        durationParts.length === 3
-          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
-          : durationParts[0] * 60 + durationParts[1];
-
-      if (totalSeconds > 1800) {
-        return reply("⏳ *Sorry, audio files longer than 30 minutes are not supported.*");
+      if (thumb) {
+        await danuwa.sendMessage(
+          from,
+          { image: { url: thumb }, caption: desc },
+          { quoted: mek }
+        );
       }
 
       await danuwa.sendMessage(
         from,
         {
-          audio: { url: songData.download.url },
+          audio: { url: fileUrl },
           mimetype: "audio/mpeg",
+          fileName,
         },
         { quoted: mek }
       );
+
+      return reply("✅ *send successfully*");
+    } catch (e) {
+      console.error("❌ Error in YTMP3 Plugin:", e);
+      return reply("❌ *Error while processing your audio request.*");
+    }
+  }
+);
+
+
+cmd(
+  {
+    pattern: "ytmp4",
+    alias: ["ytv", "video"],
+    react: "🎬",
+    desc: "Download YouTube Video (by name or link)",
+    category: "download",
+    filename: __filename,
+  },
+  async (danuwa, mek, m, { from, q, reply }) => {
+    try {
+      if (!q) return reply("*🎥 Send video name or link*");
+
+      let videoUrl = q.trim();
+      const ytRegex = /(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
+
+      if (!ytRegex.test(videoUrl)) {
+        reply("🔎 *seaching youtube*");
+        const first = await findFirstVideo(videoUrl);
+        if (!first) return reply("❌ *No results found on YouTube!*");
+        videoUrl = first.url;
+        console.log("🎬 Found:", first.title);
+      }
+
+      reply("🎬 *found*");
+
+      const result = await yt.ytmp4(videoUrl, 360);
+      if (!result?.download?.url)
+        return reply("❌ *Failed to get MP4 link. Try again later!*");
+
+      const { metadata, download } = result;
+      const title = he.decode(metadata?.title || "Unknown Title");
+      const thumb = metadata?.thumbnail || metadata?.image || null;
+      const fileUrl = download.url;
+      const quality = download.quality || "360p";
+
+      const desc = `
+🎬 *VIDEO DOWNLOADER*
+🎬 *Title:* ${title}
+📊 *Quality:* ${quality}
+🔗 *URL:* ${metadata?.url || videoUrl}
+`;
+
+      if (thumb) {
+        await danuwa.sendMessage(
+          from,
+          { image: { url: thumb }, caption: desc },
+          { quoted: mek }
+        );
+      }
 
       await danuwa.sendMessage(
         from,
         {
-          document: { url: songData.download.url },
-          mimetype: "audio/mpeg",
-          fileName: `${data.title}.mp3`,
-          caption: "🎶 *Your song is ready to be played!*",
+          video: { url: fileUrl },
+          caption: `🎬 *${title}* (${quality})`,
         },
         { quoted: mek }
       );
 
-      return reply("✅ Thank you");
+      return reply("✅ *Send successfully*");
     } catch (e) {
-      console.log(e);
-      reply(`❌ *Error:* ${e.message} 😞`);
+      console.error("❌ Error in YTMP4 Plugin:", e);
+      return reply("❌ *Error while processing your video request.*");
     }
   }
 );
