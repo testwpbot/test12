@@ -1,6 +1,5 @@
 const { cmd, commands } = require('../command');
 const config = require('../config');
-
 cmd({
     pattern: "alive",
     desc: "Check bot online or no.",
