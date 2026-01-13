@@ -1,6 +1,3 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
-
 name: Node.js CI
 
 on:
@@ -11,21 +8,36 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
         node-version: [20.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
 
     steps:
     - uses: actions/checkout@v4
+
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-    - run: npm install
-    - run: npm run start
-    - run: npm test
+
+    # ✅ Install yt-dlp & ffmpeg for your bot
+    - name: Install yt-dlp & ffmpeg
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y yt-dlp ffmpeg
+
+    - name: Install Dependencies
+      run: npm install
+
+    # Optional: verify yt-dlp installation
+    - name: Check yt-dlp version
+      run: yt-dlp --version
+
+    - name: Start WhatsApp Bot
+      run: npm run start
+
+    - name: Run Tests
+      run: npm test
