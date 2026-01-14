@@ -15,10 +15,12 @@ function normalizeQuality(text) {
   if (/1080|FHD/.test(text)) return "1080p";
   if (/720|HD/.test(text)) return "720p";
   if (/480|SD/.test(text)) return "480p";
-  return text || "Unknown";
+  if (text.includes("4K") || text.includes("UHD")) return "4K";
+  return text;
 }
 
 function getQualityOrder(quality) {
+  if (quality === "4K") return 0;
   if (quality === "1080p") return 1;
   if (quality === "720p") return 2;
   if (quality === "480p") return 3;
@@ -150,7 +152,7 @@ async function getPixeldrainLinks(movieUrl) {
 
     const pixeldrainPages = await page.$$eval("table tr a", links =>
       links
-        .filter(a => a.textContent.toLowerCase().includes("pixeldrain"))
+        .filter(a => a.textContent.toLowerCase() === "pixeldrain")
         .map(a => a.href)
         .slice(0, 5) // Limit to 5 links
     );
@@ -166,18 +168,26 @@ async function getPixeldrainLinks(movieUrl) {
         const subPage = await browser.newPage();
         await subPage.goto(link, { waitUntil: "networkidle2", timeout: 30000 });
 
-        // Wait for countdown - using Promise with setTimeout instead of waitForTimeout
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        // Wait for countdown
+        await new Promise(resolve => setTimeout(resolve, 12000));
         
         const result = await subPage.evaluate(() => {
-          const linkEl = document.querySelector(".wait-done a[href^='https://pixeldrain.com/']") || 
-                        document.querySelector("a[href*='pixeldrain']");
+          const linkEl = document.querySelector(".wait-done a[href^='https://pixeldrain.com/']");
           if (!linkEl) return null;
           
-          const qualityMatch = linkEl.textContent.match(/\b(1080|720|480)p\b/i);
+          // Extract quality from text
+          const text = linkEl.textContent || "";
+          let quality = "Unknown";
+          
+          if (text.includes("1080") || text.includes("FHD")) quality = "1080p";
+          else if (text.includes("720") || text.includes("HD")) quality = "720p";
+          else if (text.includes("480") || text.includes("SD")) quality = "480p";
+          else if (text.includes("4K") || text.includes("UHD")) quality = "4K";
+          
           return { 
             link: linkEl.href, 
-            quality: qualityMatch ? qualityMatch[0] : "Unknown" 
+            quality: quality,
+            text: text
           };
         });
 
@@ -185,6 +195,7 @@ async function getPixeldrainLinks(movieUrl) {
           directLinks.push({ 
             link: result.link, 
             quality: normalizeQuality(result.quality),
+            originalText: result.text,
             id: directLinks.length + 1
           });
         }
@@ -196,7 +207,18 @@ async function getPixeldrainLinks(movieUrl) {
       }
     }
 
-    return directLinks.sort((a, b) => getQualityOrder(a.quality) - getQualityOrder(b.quality));
+    // Remove duplicates and sort
+    const uniqueLinks = [];
+    const seen = new Set();
+    
+    directLinks.forEach(link => {
+      if (!seen.has(link.link)) {
+        seen.add(link.link);
+        uniqueLinks.push(link);
+      }
+    });
+
+    return uniqueLinks.sort((a, b) => getQualityOrder(a.quality) - getQualityOrder(b.quality));
   } catch (error) {
     console.error("Pixeldrain links error:", error);
     return [];
@@ -212,7 +234,9 @@ async function downloadFile(url, userId) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
   
-  const filename = `movie_${userId}_${Date.now()}.mp4`;
+  // Generate filename with timestamp to avoid conflicts
+  const timestamp = Date.now();
+  const filename = `movie_${userId}_${timestamp}.mp4`;
   const filepath = path.join(tempDir, filename);
   
   try {
@@ -220,14 +244,14 @@ async function downloadFile(url, userId) {
       method: 'GET',
       url: url,
       responseType: 'stream',
-      timeout: 300000 // 5 minutes
+      timeout: 600000 // 10 minutes timeout for large files
     });
 
     const writer = fs.createWriteStream(filepath);
     response.data.pipe(writer);
 
     return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(filepath));
+      writer.on('finish', () => resolve({ filepath, filename }));
       writer.on('error', reject);
     });
   } catch (error) {
@@ -324,7 +348,8 @@ cmd(
       if (!pendingSearch[sender]) return false;
       
       const num = parseInt(text.trim());
-      return !isNaN(num) && num > 0;
+      const { results } = pendingSearch[sender];
+      return !isNaN(num) && num > 0 && num <= results.length;
     }
   },
   async (danuwa, mek, m, { from, body, sender, reply }) => {
@@ -352,6 +377,7 @@ cmd(
       }
 
       // Get download links
+      reply("*⏳ Fetching download links... This may take a minute...*");
       const downloadLinks = await getPixeldrainLinks(selectedMovie.movieUrl);
       
       if (!downloadLinks.length) {
@@ -382,11 +408,11 @@ cmd(
       // Format download options
       let linksText = "*📥 Available Downloads:*\n\n";
       downloadLinks.forEach((link, index) => {
-        linksText += `*${index + 1}.* ${link.quality}\n`;
+        linksText += `*${index + 1}.* ${link.quality}${link.originalText ? ` (${link.originalText.substring(0, 20)}...)` : ''}\n`;
       });
       
       linksText += `\n*Reply with quality number (1-${downloadLinks.length}) to download.*\n`;
-      linksText += "*Note: Large files may take time to download.*";
+      linksText += "*⚠️ Note: Large files may take time to download and may exceed WhatsApp limits.*";
 
       // Send thumbnail if available
       if (metadata.thumbnail) {
@@ -426,14 +452,15 @@ cmd(
       if (!pendingQuality[sender]) return false;
       
       const num = parseInt(text.trim());
-      return !isNaN(num) && num > 0;
+      const { movie } = pendingQuality[sender];
+      return !isNaN(num) && num > 0 && num <= movie.downloadLinks.length;
     }
   },
   async (danuwa, mek, m, { from, body, sender, reply }) => {
     try {
       await danuwa.sendMessage(from, { react: { text: "⬇️", key: m.key } });
 
-      const { movie, selectedMovie } = pendingQuality[sender];
+      const { movie } = pendingQuality[sender];
       const index = parseInt(body.trim()) - 1;
       
       if (index < 0 || index >= movie.downloadLinks.length) {
@@ -443,33 +470,36 @@ cmd(
 
       const selectedLink = movie.downloadLinks[index];
       
-      reply(`*⬇️ Downloading ${selectedLink.quality} quality... This may take several minutes...*\n*Please wait...*`);
+      reply(`*⬇️ Downloading ${selectedLink.quality} quality... This may take several minutes...*\n*Please be patient...*`);
 
       try {
         // Download the file
-        const filepath = await downloadFile(selectedLink.link, sender);
+        const { filepath, filename } = await downloadFile(selectedLink.link, sender);
         
         // Get file size
         const stats = fs.statSync(filepath);
         const fileSize = (stats.size / (1024 * 1024)).toFixed(2);
 
-        // Check file size (WhatsApp limit ~16MB for videos)
-        if (stats.size > 15 * 1024 * 1024) {
-          fs.unlinkSync(filepath);
-          delete pendingQuality[sender];
-          return reply(`*❌ File too large (${fileSize}MB)! WhatsApp has a 16MB limit for videos.*`);
-        }
+        // Generate safe filename for WhatsApp
+        const safeFilename = `${movie.metadata.title.substring(0, 50)} - ${selectedLink.quality}.mp4`
+          .replace(/[^\w\s.-]/gi, '') // Remove special characters
+          .trim();
 
-        // Send the video
+        // Create caption
+        const caption = `*🎬 ${movie.metadata.title}*\n` +
+                       `*📊 Quality:* ${selectedLink.quality}\n` +
+                       `*💾 Size:* ${fileSize} MB\n` +
+                       `*📁 File:* ${safeFilename}\n\n` +
+                       `*Enjoy your movie! 🍿*`;
+
+        // Send as document
         await danuwa.sendMessage(
           from,
           {
-            video: fs.readFileSync(filepath),
-            caption: `*✅ Download Complete!*\n\n` +
-                     `*🎬 Title:* ${movie.metadata.title}\n` +
-                     `*📊 Quality:* ${selectedLink.quality}\n` +
-                     `*💾 Size:* ${fileSize} MB\n\n` +
-                     `*Enjoy your movie! 🍿*`
+            document: { url: `file://${filepath}` },
+            mimetype: "video/mp4",
+            fileName: safeFilename,
+            caption: caption
           },
           { quoted: mek }
         );
@@ -483,25 +513,28 @@ cmd(
         
         // Try to cleanup temp file
         try {
-          const tempDir = path.join(__dirname, 'temp');
-          if (fs.existsSync(tempDir)) {
-            const files = fs.readdirSync(tempDir);
-            files.forEach(file => {
-              if (file.includes(sender)) {
-                fs.unlinkSync(path.join(tempDir, file));
-              }
-            });
+          if (filepath && fs.existsSync(filepath)) {
+            fs.unlinkSync(filepath);
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error("Failed to cleanup temp file:", e);
+        }
         
         delete pendingQuality[sender];
-        throw error;
+        
+        if (error.message && error.message.includes("timeout")) {
+          return reply("*❌ Download timeout! The file might be too large or the server is slow.*");
+        } else if (error.message && error.message.includes("ECONNREFUSED")) {
+          return reply("*❌ Connection refused! The download link might be expired or invalid.*");
+        } else {
+          return reply(`*❌ Download failed:* ${error.message || "Unknown error"}`);
+        }
       }
 
     } catch (error) {
       console.error("Quality selection error:", error);
       delete pendingQuality[sender];
-      reply(`*❌ Download failed:* ${error.message || "File too large or link expired"}`);
+      reply(`*❌ Error:* ${error.message || "Something went wrong!"}`);
     }
   }
 );
@@ -530,7 +563,9 @@ setInterval(() => {
           const files = fs.readdirSync(tempDir);
           files.forEach(file => {
             if (file.includes(sender)) {
-              fs.unlinkSync(path.join(tempDir, file));
+              try {
+                fs.unlinkSync(path.join(tempDir, file));
+              } catch (e) {}
             }
           });
         }
