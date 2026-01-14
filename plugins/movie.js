@@ -1,4 +1,4 @@
-const { cmd, addReplyHandler } = require("../command");
+const { cmd } = require("../command");
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const path = require("path");
@@ -176,7 +176,7 @@ async function getPixeldrainLinks(movieUrl) {
         const subPage = await browser.newPage();
         await subPage.goto(link, { waitUntil: "networkidle2", timeout: 30000 });
 
-        // Wait for countdown (adjust as needed)
+        // Wait for countdown
         await subPage.waitForTimeout(10000);
         
         const result = await subPage.evaluate(() => {
@@ -246,7 +246,7 @@ async function downloadFile(url, userId) {
   }
 }
 
-// Command handler
+// Main command handler with reply logic
 cmd(
   {
     pattern: "movie",
@@ -286,6 +286,163 @@ cmd(
     }
   ) => {
     try {
+      // Check if this is a reply to a previous movie session
+      cleanupSessions(sender);
+      
+      if (userSessions.has(sender)) {
+        const session = userSessions.get(sender);
+        const userInput = body.trim();
+        
+        // Handle movie selection (step 1)
+        if (session.step === "movie_selection") {
+          const movieIndex = parseInt(userInput) - 1;
+          
+          if (isNaN(movieIndex) || movieIndex < 0 || movieIndex >= session.searchResults.length) {
+            userSessions.delete(sender);
+            return reply(`*❌ Invalid selection! Please start over with \`!movie movie_name\`.*`);
+          }
+
+          const selectedMovie = session.searchResults[movieIndex];
+          
+          reply("*📥 Fetching movie details... Please wait...*");
+
+          // Update session
+          session.step = "downloading";
+          session.data.selectedMovie = selectedMovie;
+          session.timestamp = Date.now();
+
+          // Get metadata
+          const metadata = await getMovieMetadata(selectedMovie.movieUrl);
+          
+          if (!metadata) {
+            userSessions.delete(sender);
+            return reply("*❌ Failed to fetch movie details. Please try again.*");
+          }
+
+          // Format metadata message
+          let metadataText = `*🎬 ${metadata.title}*\n\n`;
+          metadataText += `*📝 Language:* ${metadata.language}\n`;
+          metadataText += `*⏱️ Duration:* ${metadata.duration}\n`;
+          metadataText += `*⭐ IMDb:* ${metadata.imdb}\n`;
+          metadataText += `*🎭 Genres:* ${metadata.genres.join(", ")}\n`;
+          metadataText += `*🎥 Directors:* ${metadata.directors.join(", ")}\n`;
+          metadataText += `*🌟 Stars:* ${metadata.stars.slice(0, 5).join(", ")}${metadata.stars.length > 5 ? "..." : ""}\n\n`;
+          metadataText += "*⏳ Fetching download links... This may take a minute...*";
+
+          // Send thumbnail if available
+          if (metadata.thumbnail) {
+            await danuwa.sendMessage(
+              from,
+              {
+                image: { url: metadata.thumbnail },
+                caption: metadataText
+              },
+              { quoted: mek }
+            );
+          } else {
+            await danuwa.sendMessage(
+              from,
+              { text: metadataText },
+              { quoted: mek }
+            );
+          }
+
+          // Get download links
+          const downloadLinks = await getPixeldrainLinks(selectedMovie.movieUrl);
+          
+          if (!downloadLinks.length) {
+            userSessions.delete(sender);
+            return reply("*❌ No download links found for this movie!*");
+          }
+
+          // Update session with download links
+          session.step = "quality_selection";
+          session.data.downloadLinks = downloadLinks;
+          session.data.metadata = metadata;
+          session.timestamp = Date.now();
+
+          // Format download options
+          let linksText = "*📥 Available Downloads:*\n\n";
+          downloadLinks.forEach((link, index) => {
+            linksText += `*${index + 1}.* ${link.quality}\n`;
+          });
+          
+          linksText += `\n*Reply with quality number (1-${downloadLinks.length}) to download.*\n`;
+          linksText += "*Note: Large files may take time to download.*";
+
+          return reply(linksText);
+        }
+        
+        // Handle quality selection (step 2)
+        else if (session.step === "quality_selection") {
+          const linkIndex = parseInt(userInput) - 1;
+          
+          if (isNaN(linkIndex) || linkIndex < 0 || linkIndex >= session.data.downloadLinks.length) {
+            userSessions.delete(sender);
+            return reply(`*❌ Invalid selection! Please start over with \`!movie movie_name\`.*`);
+          }
+
+          const selectedLink = session.data.downloadLinks[linkIndex];
+          
+          reply(`*⬇️ Downloading ${selectedLink.quality} quality... This may take several minutes...*\n*Please wait...*`);
+
+          try {
+            // Download the file
+            const filepath = await downloadFile(selectedLink.link, sender);
+            
+            // Get file size
+            const stats = fs.statSync(filepath);
+            const fileSize = (stats.size / (1024 * 1024)).toFixed(2);
+
+            // Check file size (WhatsApp limit ~16MB for videos)
+            if (stats.size > 15 * 1024 * 1024) {
+              fs.unlinkSync(filepath);
+              userSessions.delete(sender);
+              return reply(`*❌ File too large (${fileSize}MB)! WhatsApp has a 16MB limit for videos.*`);
+            }
+
+            // Send the video
+            await danuwa.sendMessage(
+              from,
+              {
+                video: fs.readFileSync(filepath),
+                caption: `*✅ Download Complete!*\n\n` +
+                         `*🎬 Title:* ${session.data.metadata.title}\n` +
+                         `*📊 Quality:* ${selectedLink.quality}\n` +
+                         `*💾 Size:* ${fileSize} MB\n\n` +
+                         `*Enjoy your movie! 🍿*`
+              },
+              { quoted: mek }
+            );
+
+            // Cleanup
+            fs.unlinkSync(filepath);
+            userSessions.delete(sender);
+            return;
+
+          } catch (error) {
+            console.error("Download error:", error);
+            
+            // Try to cleanup temp file
+            try {
+              const tempDir = path.join(__dirname, 'temp');
+              if (fs.existsSync(tempDir)) {
+                const files = fs.readdirSync(tempDir);
+                files.forEach(file => {
+                  if (file.includes(sender)) {
+                    fs.unlinkSync(path.join(tempDir, file));
+                  }
+                });
+              }
+            } catch (e) {}
+            
+            userSessions.delete(sender);
+            return reply(`*❌ Download failed:* ${error.message || "File too large or link expired"}`);
+          }
+        }
+      }
+
+      // If no session or new command, start search
       if (!q) {
         return reply(`*🎬 Movie Search Plugin*\n\n*Usage:* ${command} movie_name\n*Example:* ${command} avengers\n\nSearch movies from Sinhalasub.lk`);
       }
@@ -322,168 +479,30 @@ cmd(
       await danuwa.sendMessage(from, { text: resultsText }, { quoted: mek });
 
     } catch (error) {
-      console.error("Movie search error:", error);
+      console.error("Movie plugin error:", error);
+      
+      // Cleanup session on error
+      if (userSessions.has(sender)) {
+        userSessions.delete(sender);
+      }
+      
+      // Try to cleanup temp files
+      try {
+        const tempDir = path.join(__dirname, 'temp');
+        if (fs.existsSync(tempDir)) {
+          const files = fs.readdirSync(tempDir);
+          files.forEach(file => {
+            if (file.includes(sender)) {
+              fs.unlinkSync(path.join(tempDir, file));
+            }
+          });
+        }
+      } catch (e) {}
+      
       reply(`*❌ Error:* ${error.message || "Something went wrong!"}`);
     }
   }
 );
-
-// Reply handler for movie selection
-addReplyHandler({
-  filter: (text, { sender }) => {
-    cleanupSessions(sender);
-    return userSessions.has(sender) && userSessions.get(sender).step === "movie_selection";
-  },
-  function: async (danuwa, mek, m, { from, body, sender, reply }) => {
-    try {
-      const session = userSessions.get(sender);
-      const movieIndex = parseInt(body.trim()) - 1;
-      
-      if (isNaN(movieIndex) || movieIndex < 0 || movieIndex >= session.searchResults.length) {
-        return reply(`*❌ Invalid selection! Please reply with a number between 1 and ${session.searchResults.length}.*`);
-      }
-
-      const selectedMovie = session.searchResults[movieIndex];
-      
-      reply("*📥 Fetching movie details... Please wait...*");
-
-      // Update session
-      session.step = "downloading";
-      session.data.selectedMovie = selectedMovie;
-      session.timestamp = Date.now();
-
-      // Get metadata
-      const metadata = await getMovieMetadata(selectedMovie.movieUrl);
-      
-      if (!metadata) {
-        userSessions.delete(sender);
-        return reply("*❌ Failed to fetch movie details. Please try again.*");
-      }
-
-      // Format metadata message
-      let metadataText = `*🎬 ${metadata.title}*\n\n`;
-      metadataText += `*📝 Language:* ${metadata.language}\n`;
-      metadataText += `*⏱️ Duration:* ${metadata.duration}\n`;
-      metadataText += `*⭐ IMDb:* ${metadata.imdb}\n`;
-      metadataText += `*🎭 Genres:* ${metadata.genres.join(", ")}\n`;
-      metadataText += `*🎥 Directors:* ${metadata.directors.join(", ")}\n`;
-      metadataText += `*🌟 Stars:* ${metadata.stars.slice(0, 5).join(", ")}${metadata.stars.length > 5 ? "..." : ""}\n\n`;
-      metadataText += "*⏳ Fetching download links... This may take a minute...*";
-
-      // Send thumbnail if available
-      if (metadata.thumbnail) {
-        await danuwa.sendMessage(
-          from,
-          {
-            image: { url: metadata.thumbnail },
-            caption: metadataText
-          },
-          { quoted: mek }
-        );
-      } else {
-        await danuwa.sendMessage(
-          from,
-          { text: metadataText },
-          { quoted: mek }
-        );
-      }
-
-      // Get download links
-      const downloadLinks = await getPixeldrainLinks(selectedMovie.movieUrl);
-      
-      if (!downloadLinks.length) {
-        userSessions.delete(sender);
-        return reply("*❌ No download links found for this movie!*");
-      }
-
-      // Update session with download links
-      session.step = "quality_selection";
-      session.data.downloadLinks = downloadLinks;
-      session.data.metadata = metadata;
-      session.timestamp = Date.now();
-
-      // Format download options
-      let linksText = "*📥 Available Downloads:*\n\n";
-      downloadLinks.forEach((link, index) => {
-        linksText += `*${index + 1}.* ${link.quality}\n`;
-      });
-      
-      linksText += `\n*Reply with quality number (1-${downloadLinks.length}) to download.*\n`;
-      linksText += "*Note: Large files may take time to download.*";
-
-      reply(linksText);
-
-    } catch (error) {
-      console.error("Movie selection error:", error);
-      userSessions.delete(sender);
-      reply(`*❌ Error:* ${error.message || "Something went wrong!"}`);
-    }
-  }
-});
-
-// Reply handler for quality selection and download
-addReplyHandler({
-  filter: (text, { sender }) => {
-    cleanupSessions(sender);
-    return userSessions.has(sender) && userSessions.get(sender).step === "quality_selection";
-  },
-  function: async (danuwa, mek, m, { from, body, sender, reply }) => {
-    try {
-      const session = userSessions.get(sender);
-      const linkIndex = parseInt(body.trim()) - 1;
-      
-      if (isNaN(linkIndex) || linkIndex < 0 || linkIndex >= session.data.downloadLinks.length) {
-        return reply(`*❌ Invalid selection! Please reply with a number between 1 and ${session.data.downloadLinks.length}.*`);
-      }
-
-      const selectedLink = session.data.downloadLinks[linkIndex];
-      
-      reply(`*⬇️ Downloading ${selectedLink.quality} quality... This may take several minutes...*\n*Please wait...*`);
-
-      // Download the file
-      const filepath = await downloadFile(selectedLink.link, sender);
-      
-      // Get file size
-      const stats = fs.statSync(filepath);
-      const fileSize = (stats.size / (1024 * 1024)).toFixed(2);
-
-      // Send the video
-      await danuwa.sendMessage(
-        from,
-        {
-          video: fs.readFileSync(filepath),
-          caption: `*✅ Download Complete!*\n\n` +
-                   `*🎬 Title:* ${session.data.metadata.title}\n` +
-                   `*📊 Quality:* ${selectedLink.quality}\n` +
-                   `*💾 Size:* ${fileSize} MB\n\n` +
-                   `*Enjoy your movie! 🍿*`
-        },
-        { quoted: mek }
-      );
-
-      // Cleanup
-      fs.unlinkSync(filepath);
-      userSessions.delete(sender);
-
-    } catch (error) {
-      console.error("Download error:", error);
-      
-      // Try to cleanup temp file
-      try {
-        const tempDir = path.join(__dirname, 'temp');
-        const files = fs.readdirSync(tempDir);
-        files.forEach(file => {
-          if (file.includes(sender)) {
-            fs.unlinkSync(path.join(tempDir, file));
-          }
-        });
-      } catch (e) {}
-      
-      userSessions.delete(sender);
-      reply(`*❌ Download failed:* ${error.message || "File too large or link expired"}`);
-    }
-  }
-});
 
 // Add cleanup for old sessions periodically
 setInterval(() => {
@@ -491,6 +510,22 @@ setInterval(() => {
   for (const [userId, session] of userSessions.entries()) {
     if (now - session.timestamp > 10 * 60 * 1000) {
       userSessions.delete(userId);
+      
+      // Cleanup temp files for this user
+      try {
+        const tempDir = path.join(__dirname, 'temp');
+        if (fs.existsSync(tempDir)) {
+          const files = fs.readdirSync(tempDir);
+          files.forEach(file => {
+            if (file.includes(userId)) {
+              fs.unlinkSync(path.join(tempDir, file));
+            }
+          });
+        }
+      } catch (e) {}
     }
   }
 }, 5 * 60 * 1000); // Clean every 5 minutes
+
+// Export session manager for debugging if needed
+module.exports = { userSessions };
