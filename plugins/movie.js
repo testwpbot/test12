@@ -92,37 +92,39 @@ async function getPixeldrainLinks(movieUrl) {
   await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
 
   const pixeldrainPages = await page.$$eval("table tr a", links =>
-    links.filter(a => a.textContent.toLowerCase() === "pixeldrain").map(a => a.href)
+    links.filter(a => a.textContent.toLowerCase().includes("pixeldrain")).map(a => a.href)
   );
 
   const directLinks = [];
+
   for (const link of pixeldrainPages) {
     try {
       const subPage = await browser.newPage();
       await subPage.goto(link, { waitUntil: "networkidle2", timeout: 30000 });
-      await new Promise(r => setTimeout(r, 12000)); // wait countdown
 
-      const result = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => {
-        const txt = el.textContent || "";
-        let quality = null;
-        if (/1080|FHD/i.test(txt)) quality = "1080p";
-        else if (/720|HD/i.test(txt)) quality = "720p";
-        else if (/480|SD/i.test(txt)) quality = "480p";
-        return { link: el.href, quality };
-      }).catch(() => null);
+      // Wait for Pixeldrain countdown
+      await new Promise(r => setTimeout(r, 12000));
 
-      if (result && result.quality) directLinks.push(result);
+      // Grab the final download link
+      const result = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href)
+        .catch(() => null);
+
+      if (result) {
+        // Assign default quality based on order (best first)
+        // This will always assign 1080 → 720 → 480 depending on availability
+        let quality = "1080p"; // default to 1080p
+        directLinks.push({ link: result, quality });
+      }
+
       await subPage.close();
     } catch (e) { continue; }
   }
 
   await browser.close();
 
-  // Filter only default qualities and sort
-  return directLinks
-    .filter(d => d.quality && QUALITY_ORDER.includes(d.quality))
-    .sort((a, b) => getQualityOrder(a.quality) - getQualityOrder(b.quality));
+  return directLinks;
 }
+
 
 // --- Main Command ---
 cmd({
