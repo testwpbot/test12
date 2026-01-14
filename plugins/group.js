@@ -4,37 +4,47 @@ const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 /* ─────────────── HELPERS ─────────────── */
 
 async function getGroupContext(sock, m) {
-const metadata = await sock.groupMetadata(m.chat);
+  const metadata = await sock.groupMetadata(m.chat);
 
-const botId = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+  const botId = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+  const sender = m.sender;
 
-const isBotSender = m.sender === botId;
+  const isBotSender = sender === botId;
 
-const isUserAdmin =
-  isBotSender ||
-  metadata.participants.some(
-    p => p.id === m.sender && (p.admin === "admin" || p.admin === "superadmin")
-  );
+  const isUserAdmin =
+    isBotSender ||
+    metadata.participants.some(
+      p =>
+        p.id === sender &&
+        (p.admin === "admin" || p.admin === "superadmin")
+    );
 
-const isBotAdmin =
-  metadata.owner === botId ||
-  metadata.participants.some(
-    p => p.id === botId && (p.admin === "admin" || p.admin === "superadmin")
-  );
+  const isBotAdmin =
+    metadata.owner === botId ||
+    metadata.participants.some(
+      p =>
+        p.id === botId &&
+        (p.admin === "admin" || p.admin === "superadmin")
+    );
 
-if (!isUserAdmin)
-  return reply("❌ You must be an admin.");
-
-if (!isBotAdmin)
-  return reply("❌ I must be an admin to do this.");
+  return {
+    metadata,
+    participants: metadata.participants,
+    botId,
+    isUserAdmin,
+    isBotAdmin
+  };
+}
 
 function getTargetUser(mek, quoted, args) {
-  if (mek.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length) {
+  if (mek.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length)
     return mek.message.extendedTextMessage.contextInfo.mentionedJid[0];
-  }
+
   if (quoted?.sender) return quoted.sender;
+
   if (args[0]?.includes("@"))
     return args[0].replace("@", "") + "@s.whatsapp.net";
+
   return null;
 }
 
@@ -120,7 +130,7 @@ cmd({
   reply(`✅ Demoted: @${target.split("@")[0]}`, { mentions: [target] });
 });
 
-/* ─────────────── SET PP ─────────────── */
+/* ─────────────── SET GROUP PP ─────────────── */
 
 cmd({
   pattern: "setpp",
