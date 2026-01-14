@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { getGroupAdmins } = require("../lib/functions2");
+const { getGroupAdmins } = require("../lib/functions");
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 
