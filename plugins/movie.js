@@ -5,39 +5,20 @@ const puppeteer = require("puppeteer");
 const pendingSearch = {};
 const pendingQuality = {};
 
-// --- Quality utilities ---
-const QUALITY_ORDER = ["1080p", "720p", "480p"];
+// --- Utilities ---
 function normalizeQuality(text) {
   if (!text) return null;
   text = text.toUpperCase();
   if (/1080|FHD/.test(text)) return "1080p";
   if (/720|HD/.test(text)) return "720p";
   if (/480|SD/.test(text)) return "480p";
-  return null;
-}
-function getQualityOrder(q) {
-  return QUALITY_ORDER.indexOf(q);
+  return text;
 }
 
-// --- Convert Pixeldrain URL to direct API link ---
 function getDirectPixeldrainUrl(url) {
   const match = url.match(/pixeldrain\.com\/u\/(\w+)/);
   if (!match) return null;
-  return `https://pixeldrain.com/api/file/${match[1]}?download`;
-}
-
-// --- Filter and deduplicate links ---
-function filterLinks(links) {
-  const normalized = links.map(l => ({ link: l.link, quality: normalizeQuality(l.quality) || "1080p" }));
-  const seen = new Set();
-  const unique = [];
-  for (const l of normalized) {
-    if (!seen.has(l.quality)) {
-      seen.add(l.quality);
-      unique.push(l);
-    }
-  }
-  return unique.sort((a, b) => getQualityOrder(a.quality) - getQualityOrder(b.quality));
+  return `https://pixeldrain.com/api/file/${match[1]}/content`;
 }
 
 // --- Search movies ---
@@ -104,31 +85,50 @@ async function getMovieMetadata(url) {
   return metadata;
 }
 
-// --- Fetch Pixeldrain links and assign default qualities 1080/720/480 ---
+// --- Fetch Pixeldrain links with real quality & size ---
 async function getPixeldrainLinks(movieUrl) {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
   await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
 
-  const pixeldrainPages = await page.$$eval("table tr a", links =>
-    links.filter(a => a.textContent.toLowerCase().includes("pixeldrain")).map(a => a.href)
-  );
+  // Grab all Pixeldrain table rows
+  const linksData = await page.$$eval(".link-pixeldrain tbody tr", rows => {
+    return rows.map(row => {
+      const a = row.querySelector(".link-opt a");
+      const quality = row.querySelector(".quality")?.textContent.trim() || "";
+      const size = row.querySelector("td:nth-child(3) span")?.textContent.trim() || "";
+      return {
+        pageLink: a?.href || "",
+        quality: quality,
+        size: size
+      };
+    });
+  });
 
   const directLinks = [];
-  let qualityIndex = 0;
-  for (const link of pixeldrainPages) {
-    if (qualityIndex >= 3) break; // only 1080,720,480
+  for (const l of linksData) {
     try {
       const subPage = await browser.newPage();
-      await subPage.goto(link, { waitUntil: "networkidle2", timeout: 30000 });
-      await new Promise(r => setTimeout(r, 12000)); // wait for countdown
+      await subPage.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
+      await new Promise(r => setTimeout(r, 12000));
 
       const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href)
         .catch(() => null);
 
       if (finalUrl) {
-        directLinks.push({ link: finalUrl, quality: QUALITY_ORDER[qualityIndex] });
-        qualityIndex++;
+        // Convert size to MB
+        let sizeMB = 0;
+        const sizeText = l.size.toUpperCase();
+        if (sizeText.includes("GB")) sizeMB = parseFloat(sizeText) * 1024;
+        else if (sizeText.includes("MB")) sizeMB = parseFloat(sizeText);
+
+        if (sizeMB <= 2048) {
+          directLinks.push({
+            link: finalUrl,
+            quality: normalizeQuality(l.quality),
+            size: l.size
+          });
+        }
       }
       await subPage.close();
     } catch (e) { continue; }
@@ -138,7 +138,9 @@ async function getPixeldrainLinks(movieUrl) {
   return directLinks;
 }
 
-// --- Command: Search Movies ---
+// --- Commands ---
+
+// 1️⃣ Movie search
 cmd({
   pattern: "movie",
   alias: ["sinhalasub","films","cinema"],
@@ -163,23 +165,22 @@ cmd({
   reply(text);
 });
 
-// --- Handle Movie Selection ---
+// 2️⃣ Handle movie selection
 cmd({
-  filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) &&
-    parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
+  filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
   const index = parseInt(body.trim()) - 1;
   const selected = pendingSearch[sender].results[index];
   delete pendingSearch[sender];
 
   reply("*📥 Fetching movie metadata and download links...*");
-
   const metadata = await getMovieMetadata(selected.movieUrl);
   const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
-  if (!downloadLinks.length) return reply("*❌ No download links found!*");
+
+  if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
 
   console.log(`=== DEBUG: Available download links for ${metadata.title} ===`);
-  downloadLinks.forEach((d,i) => console.log(`${i+1}: [${d.quality}] ${d.link}`));
+  downloadLinks.forEach((d,i) => console.log(`${i+1}: [${d.quality}] ${d.size} - ${d.link}`));
   console.log("=== END DEBUG ===");
 
   pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
@@ -187,8 +188,8 @@ cmd({
   let msg = `*🎬 ${metadata.title}*\n`;
   msg += `*📝 Language:* ${metadata.language}\n*⏱️ Duration:* ${metadata.duration}\n*⭐ IMDb:* ${metadata.imdb}\n`;
   msg += `*🎭 Genres:* ${metadata.genres.join(", ")}\n*🎥 Directors:* ${metadata.directors.join(", ")}\n*🌟 Stars:* ${metadata.stars.slice(0,5).join(", ")}${metadata.stars.length>5?"...":""}\n\n`;
-  msg += "*📥 Available Qualities:*\n";
-  downloadLinks.forEach((d,i) => msg += `*${i+1}.* ${d.quality}\n`);
+  msg += "*📥 Available Qualities (Max 2GB):*\n";
+  downloadLinks.forEach((d,i) => msg += `*${i+1}.* ${d.quality} - ${d.size}\n`);
   msg += `\n*Reply with quality number to receive the movie as a document.*`;
 
   if (metadata.thumbnail) {
@@ -198,27 +199,24 @@ cmd({
   }
 });
 
-// --- Handle Quality Selection & Send Movie ---
+// 3️⃣ Handle quality selection
 cmd({
-  filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) &&
-    parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
+  filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
   const index = parseInt(body.trim()) - 1;
   const { movie } = pendingQuality[sender];
   delete pendingQuality[sender];
 
   const selectedLink = movie.downloadLinks[index];
-  const directUrl = getDirectPixeldrainUrl(selectedLink.link);
-
-  if (!directUrl) return reply("*❌ Failed to get direct movie link!*");
-  reply(`*⬇️ Sending ${selectedLink.quality} movie as document...* Please wait.`);
+  reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
 
   try {
+    const directUrl = getDirectPixeldrainUrl(selectedLink.link);
     await danuwa.sendMessage(from, {
       document: { url: directUrl },
       mimetype: "video/mp4",
       fileName: `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`.replace(/[^\w\s.-]/gi,''),
-      caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* Streaming directly from Pixeldrain\n\n*Enjoy your movie! 🍿*`
+      caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* ${selectedLink.size}\n\n*Enjoy your movie! 🍿*`
     }, { quoted: mek });
   } catch (error) {
     console.error("Send document error:", error);
@@ -226,7 +224,7 @@ cmd({
   }
 });
 
-// --- Cleanup old sessions ---
+// 4️⃣ Cleanup old sessions
 setInterval(() => {
   const now = Date.now();
   const timeout = 10*60*1000;
