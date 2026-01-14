@@ -23,7 +23,7 @@ function getQualityOrder(q) {
 function getDirectPixeldrainUrl(url) {
   const match = url.match(/pixeldrain\.com\/u\/(\w+)/);
   if (!match) return null;
-  return `https://pixeldrain.com/api/file/${match[1]}/content`;
+  return `https://pixeldrain.com/api/file/${match[1]}?download`;
 }
 
 // --- Filter and deduplicate links ---
@@ -104,7 +104,7 @@ async function getMovieMetadata(url) {
   return metadata;
 }
 
-// --- Fetch Pixeldrain links ---
+// --- Fetch Pixeldrain links and assign default qualities 1080/720/480 ---
 async function getPixeldrainLinks(movieUrl) {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
@@ -115,27 +115,30 @@ async function getPixeldrainLinks(movieUrl) {
   );
 
   const directLinks = [];
-
+  let qualityIndex = 0;
   for (const link of pixeldrainPages) {
+    if (qualityIndex >= 3) break; // only 1080,720,480
     try {
       const subPage = await browser.newPage();
       await subPage.goto(link, { waitUntil: "networkidle2", timeout: 30000 });
-      await new Promise(r => setTimeout(r, 12000));
+      await new Promise(r => setTimeout(r, 12000)); // wait for countdown
 
-      const result = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href)
+      const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href)
         .catch(() => null);
 
-      if (result) directLinks.push({ link: result, quality: "1080p" }); // default quality
+      if (finalUrl) {
+        directLinks.push({ link: finalUrl, quality: QUALITY_ORDER[qualityIndex] });
+        qualityIndex++;
+      }
       await subPage.close();
     } catch (e) { continue; }
   }
 
   await browser.close();
-  return filterLinks(directLinks);
+  return directLinks;
 }
 
-// --- Commands ---
-// 1️⃣ Movie search
+// --- Command: Search Movies ---
 cmd({
   pattern: "movie",
   alias: ["sinhalasub","films","cinema"],
@@ -160,18 +163,19 @@ cmd({
   reply(text);
 });
 
-// 2️⃣ Handle movie selection
+// --- Handle Movie Selection ---
 cmd({
-  filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
+  filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) &&
+    parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
   const index = parseInt(body.trim()) - 1;
   const selected = pendingSearch[sender].results[index];
   delete pendingSearch[sender];
 
   reply("*📥 Fetching movie metadata and download links...*");
+
   const metadata = await getMovieMetadata(selected.movieUrl);
   const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
-
   if (!downloadLinks.length) return reply("*❌ No download links found!*");
 
   console.log(`=== DEBUG: Available download links for ${metadata.title} ===`);
@@ -194,19 +198,22 @@ cmd({
   }
 });
 
-// 3️⃣ Handle quality selection
+// --- Handle Quality Selection & Send Movie ---
 cmd({
-  filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
+  filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) &&
+    parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
   const index = parseInt(body.trim()) - 1;
   const { movie } = pendingQuality[sender];
   delete pendingQuality[sender];
 
   const selectedLink = movie.downloadLinks[index];
-  reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
+  const directUrl = getDirectPixeldrainUrl(selectedLink.link);
+
+  if (!directUrl) return reply("*❌ Failed to get direct movie link!*");
+  reply(`*⬇️ Sending ${selectedLink.quality} movie as document...* Please wait.`);
 
   try {
-    const directUrl = getDirectPixeldrainUrl(selectedLink.link);
     await danuwa.sendMessage(from, {
       document: { url: directUrl },
       mimetype: "video/mp4",
@@ -219,7 +226,7 @@ cmd({
   }
 });
 
-// 4️⃣ Cleanup old sessions
+// --- Cleanup old sessions ---
 setInterval(() => {
   const now = Date.now();
   const timeout = 10*60*1000;
