@@ -166,8 +166,8 @@ async function getPixeldrainLinks(movieUrl) {
         const subPage = await browser.newPage();
         await subPage.goto(link, { waitUntil: "networkidle2", timeout: 30000 });
 
-        // Wait for countdown
-        await subPage.waitForTimeout(10000);
+        // Wait for countdown - using Promise with setTimeout instead of waitForTimeout
+        await new Promise(resolve => setTimeout(resolve, 10000));
         
         const result = await subPage.evaluate(() => {
           const linkEl = document.querySelector(".wait-done a[href^='https://pixeldrain.com/']") || 
@@ -321,7 +321,10 @@ cmd(
   {
     filter: (text, { sender }) => {
       // Check if user has pending search results and reply is a number
-      return pendingSearch[sender] && /^[1-9][0-9]*$/.test(text.trim());
+      if (!pendingSearch[sender]) return false;
+      
+      const num = parseInt(text.trim());
+      return !isNaN(num) && num > 0;
     }
   },
   async (danuwa, mek, m, { from, body, sender, reply }) => {
@@ -420,7 +423,10 @@ cmd(
   {
     filter: (text, { sender }) => {
       // Check if user has pending quality selection and reply is a number
-      return pendingQuality[sender] && /^[1-9][0-9]*$/.test(text.trim());
+      if (!pendingQuality[sender]) return false;
+      
+      const num = parseInt(text.trim());
+      return !isNaN(num) && num > 0;
     }
   },
   async (danuwa, mek, m, { from, body, sender, reply }) => {
