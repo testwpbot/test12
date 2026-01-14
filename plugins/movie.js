@@ -15,10 +15,11 @@ function normalizeQuality(text) {
   return text;
 }
 
+// Correct Pixeldrain direct URL
 function getDirectPixeldrainUrl(url) {
   const match = url.match(/pixeldrain\.com\/u\/(\w+)/);
   if (!match) return null;
-  return `https://pixeldrain.com/api/file/${match[1]}/content`;
+  return `https://pixeldrain.com/api/file/${match[1]}?download`;
 }
 
 // --- Search movies ---
@@ -91,19 +92,14 @@ async function getPixeldrainLinks(movieUrl) {
   const page = await browser.newPage();
   await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
 
-  // Grab all Pixeldrain table rows
-  const linksData = await page.$$eval(".link-pixeldrain tbody tr", rows => {
-    return rows.map(row => {
+  const linksData = await page.$$eval(".link-pixeldrain tbody tr", rows =>
+    rows.map(row => {
       const a = row.querySelector(".link-opt a");
       const quality = row.querySelector(".quality")?.textContent.trim() || "";
       const size = row.querySelector("td:nth-child(3) span")?.textContent.trim() || "";
-      return {
-        pageLink: a?.href || "",
-        quality: quality,
-        size: size
-      };
-    });
-  });
+      return { pageLink: a?.href || "", quality, size };
+    })
+  );
 
   const directLinks = [];
   for (const l of linksData) {
@@ -112,8 +108,7 @@ async function getPixeldrainLinks(movieUrl) {
       await subPage.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
       await new Promise(r => setTimeout(r, 12000));
 
-      const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href)
-        .catch(() => null);
+      const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href).catch(() => null);
 
       if (finalUrl) {
         // Convert size to MB
@@ -165,7 +160,7 @@ cmd({
   reply(text);
 });
 
-// 2️⃣ Handle movie selection
+// 2️⃣ Handle movie selection: send metadata first
 cmd({
   filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
@@ -173,30 +168,31 @@ cmd({
   const selected = pendingSearch[sender].results[index];
   delete pendingSearch[sender];
 
-  reply("*📥 Fetching movie metadata and download links...*");
+  // Fetch metadata first
   const metadata = await getMovieMetadata(selected.movieUrl);
-  const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
-
-  if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
-
-  console.log(`=== DEBUG: Available download links for ${metadata.title} ===`);
-  downloadLinks.forEach((d,i) => console.log(`${i+1}: [${d.quality}] ${d.size} - ${d.link}`));
-  console.log("=== END DEBUG ===");
-
-  pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
 
   let msg = `*🎬 ${metadata.title}*\n`;
   msg += `*📝 Language:* ${metadata.language}\n*⏱️ Duration:* ${metadata.duration}\n*⭐ IMDb:* ${metadata.imdb}\n`;
   msg += `*🎭 Genres:* ${metadata.genres.join(", ")}\n*🎥 Directors:* ${metadata.directors.join(", ")}\n*🌟 Stars:* ${metadata.stars.slice(0,5).join(", ")}${metadata.stars.length>5?"...":""}\n\n`;
-  msg += "*📥 Available Qualities (Max 2GB):*\n";
-  downloadLinks.forEach((d,i) => msg += `*${i+1}.* ${d.quality} - ${d.size}\n`);
-  msg += `\n*Reply with quality number to receive the movie as a document.*`;
+  msg += "*🔗 Fetching download links, please wait...*";
 
   if (metadata.thumbnail) {
     await danuwa.sendMessage(from, { image: { url: metadata.thumbnail }, caption: msg }, { quoted: mek });
   } else {
     await danuwa.sendMessage(from, { text: msg }, { quoted: mek });
   }
+
+  // Fetch download links in background
+  const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
+  if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
+
+  pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
+
+  let qualityMsg = "*📥 Available Qualities (Max 2GB):*\n";
+  downloadLinks.forEach((d,i) => qualityMsg += `*${i+1}.* ${d.quality} - ${d.size}\n`);
+  qualityMsg += `\n*Reply with quality number to receive the movie as a document.*`;
+
+  await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: mek });
 });
 
 // 3️⃣ Handle quality selection
