@@ -4,28 +4,29 @@ const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 /* ─────────────── HELPERS ─────────────── */
 
 async function getGroupContext(sock, m) {
-  const metadata = await sock.groupMetadata(m.chat);
+const metadata = await sock.groupMetadata(m.chat);
 
-  const botId = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+const botId = sock.user.id.split(":")[0] + "@s.whatsapp.net";
 
-  const isUserAdmin = metadata.participants.some(
+const isBotSender = m.sender === botId;
+
+const isUserAdmin =
+  isBotSender ||
+  metadata.participants.some(
     p => p.id === m.sender && (p.admin === "admin" || p.admin === "superadmin")
   );
 
-  const isBotAdmin =
-    metadata.owner === botId ||
-    metadata.participants.some(
-      p => p.id === botId && (p.admin === "admin" || p.admin === "superadmin")
-    );
+const isBotAdmin =
+  metadata.owner === botId ||
+  metadata.participants.some(
+    p => p.id === botId && (p.admin === "admin" || p.admin === "superadmin")
+  );
 
-  return {
-    metadata,
-    isUserAdmin,
-    isBotAdmin,
-    participants: metadata.participants,
-    botId
-  };
-}
+if (!isUserAdmin)
+  return reply("❌ You must be an admin.");
+
+if (!isBotAdmin)
+  return reply("❌ I must be an admin to do this.");
 
 function getTargetUser(mek, quoted, args) {
   if (mek.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length) {
