@@ -158,8 +158,14 @@ cmd({
   const index = parseInt(body) - 1;
   const movie = pendingSearch[sender].results[index];
   reply("*📥 Fetching metadata...*");
+
   const metadata = await getMovieMetadata(movie.movieUrl);
   const links = await getPixeldrainLinks(movie.movieUrl);
+
+  // --- Debug log for available links ---
+  console.log("=== DEBUG: Available download links for", metadata.title, "===");
+  links.forEach((l, i) => console.log(`${i + 1}: [${l.quality}] ${l.link}`));
+  console.log("=== END DEBUG ===");
 
   if (!links.length) return reply("*❌ No download links found!*");
 
