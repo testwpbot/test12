@@ -1,11 +1,11 @@
 const { cmd } = require("../command");
 const puppeteer = require("puppeteer");
 
-// User session management
+// --- User sessions ---
 const pendingSearch = {};
 const pendingQuality = {};
 
-// Quality utilities
+// --- Quality utilities ---
 const QUALITY_ORDER = ["1080p", "720p", "480p"];
 function normalizeQuality(text) {
   if (!text) return null;
@@ -13,20 +13,40 @@ function normalizeQuality(text) {
   if (/1080|FHD/.test(text)) return "1080p";
   if (/720|HD/.test(text)) return "720p";
   if (/480|SD/.test(text)) return "480p";
-  return null; // discard unknown qualities
+  return null;
 }
-function getQualityOrder(quality) {
-  return QUALITY_ORDER.indexOf(quality);
+function getQualityOrder(q) {
+  return QUALITY_ORDER.indexOf(q);
 }
 
-// --- Search Movies ---
+// --- Convert Pixeldrain URL to direct API link ---
+function getDirectPixeldrainUrl(url) {
+  const match = url.match(/pixeldrain\.com\/u\/(\w+)/);
+  if (!match) return null;
+  return `https://pixeldrain.com/api/file/${match[1]}/content`;
+}
+
+// --- Filter and deduplicate links ---
+function filterLinks(links) {
+  const normalized = links.map(l => ({ link: l.link, quality: normalizeQuality(l.quality) || "1080p" }));
+  const seen = new Set();
+  const unique = [];
+  for (const l of normalized) {
+    if (!seen.has(l.quality)) {
+      seen.add(l.quality);
+      unique.push(l);
+    }
+  }
+  return unique.sort((a, b) => getQualityOrder(a.quality) - getQualityOrder(b.quality));
+}
+
+// --- Search movies ---
 async function searchMovies(query) {
   const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}&post_type=movies`;
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
-
   await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 30000 });
-  
+
   const results = await page.$$eval(".display-item .item-box", boxes =>
     boxes.slice(0, 10).map((box, index) => {
       const a = box.querySelector("a");
@@ -50,7 +70,7 @@ async function searchMovies(query) {
   return results;
 }
 
-// --- Fetch Movie Metadata ---
+// --- Fetch movie metadata ---
 async function getMovieMetadata(url) {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
@@ -61,9 +81,8 @@ async function getMovieMetadata(url) {
     const getList = selector => Array.from(document.querySelectorAll(selector)).map(el => el.textContent.trim());
 
     const title = getText(document.querySelector(".info-details .details-title h3"));
-    
-    let language = "";
-    let directors = [], stars = [];
+
+    let language = "", directors = [], stars = [];
     document.querySelectorAll(".info-col p").forEach(p => {
       const strong = p.querySelector("strong");
       if (!strong) return;
@@ -85,7 +104,7 @@ async function getMovieMetadata(url) {
   return metadata;
 }
 
-// --- Fetch Pixeldrain Links ---
+// --- Fetch Pixeldrain links ---
 async function getPixeldrainLinks(movieUrl) {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
@@ -101,49 +120,38 @@ async function getPixeldrainLinks(movieUrl) {
     try {
       const subPage = await browser.newPage();
       await subPage.goto(link, { waitUntil: "networkidle2", timeout: 30000 });
-
-      // Wait for Pixeldrain countdown
       await new Promise(r => setTimeout(r, 12000));
 
-      // Grab the final download link
       const result = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href)
         .catch(() => null);
 
-      if (result) {
-        // Assign default quality based on order (best first)
-        // This will always assign 1080 → 720 → 480 depending on availability
-        let quality = "1080p"; // default to 1080p
-        directLinks.push({ link: result, quality });
-      }
-
+      if (result) directLinks.push({ link: result, quality: "1080p" }); // default quality
       await subPage.close();
     } catch (e) { continue; }
   }
 
   await browser.close();
-
-  return directLinks;
+  return filterLinks(directLinks);
 }
 
-
-// --- Main Command ---
+// --- Commands ---
+// 1️⃣ Movie search
 cmd({
   pattern: "movie",
-  alias: ["sinhalasub", "films", "cinema"],
+  alias: ["sinhalasub","films","cinema"],
   react: "🎬",
   desc: "Search and send movies from Sinhalasub.lk",
   category: "download",
-  filename: __filename,
+  filename: __filename
 }, async (danuwa, mek, m, { from, q, sender, reply }) => {
   if (!q) return reply(`*🎬 Movie Search Plugin*\nUsage: movie_name\nExample: movie avengers`);
-
   reply("*🔍 Searching for movies...*");
-  const searchResults = await searchMovies(q);
 
+  const searchResults = await searchMovies(q);
   if (!searchResults.length) return reply("*❌ No movies found!*");
+
   pendingSearch[sender] = { results: searchResults, timestamp: Date.now() };
 
-  // List movies
   let text = "*🎬 Search Results:*\n";
   searchResults.forEach((m, i) => {
     text += `*${i+1}.* ${m.title}\n   📝 Language: ${m.language}\n   📊 Quality: ${m.quality}\n   🎞️ Format: ${m.qty}\n`;
@@ -152,7 +160,7 @@ cmd({
   reply(text);
 });
 
-// --- Handle Movie Selection ---
+// 2️⃣ Handle movie selection
 cmd({
   filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
@@ -166,19 +174,17 @@ cmd({
 
   if (!downloadLinks.length) return reply("*❌ No download links found!*");
 
-  // Debug log
   console.log(`=== DEBUG: Available download links for ${metadata.title} ===`);
-  downloadLinks.forEach((d, i) => console.log(`${i+1}: [${d.quality}] ${d.link}`));
+  downloadLinks.forEach((d,i) => console.log(`${i+1}: [${d.quality}] ${d.link}`));
   console.log("=== END DEBUG ===");
 
   pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
 
-  // Send metadata + download options
   let msg = `*🎬 ${metadata.title}*\n`;
   msg += `*📝 Language:* ${metadata.language}\n*⏱️ Duration:* ${metadata.duration}\n*⭐ IMDb:* ${metadata.imdb}\n`;
   msg += `*🎭 Genres:* ${metadata.genres.join(", ")}\n*🎥 Directors:* ${metadata.directors.join(", ")}\n*🌟 Stars:* ${metadata.stars.slice(0,5).join(", ")}${metadata.stars.length>5?"...":""}\n\n`;
   msg += "*📥 Available Qualities:*\n";
-  downloadLinks.forEach((d, i) => msg += `*${i+1}.* ${d.quality}\n`);
+  downloadLinks.forEach((d,i) => msg += `*${i+1}.* ${d.quality}\n`);
   msg += `\n*Reply with quality number to receive the movie as a document.*`;
 
   if (metadata.thumbnail) {
@@ -188,7 +194,7 @@ cmd({
   }
 });
 
-// --- Handle Quality Selection ---
+// 3️⃣ Handle quality selection
 cmd({
   filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
@@ -200,12 +206,12 @@ cmd({
   reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
 
   try {
-    // Send movie as document from Pixeldrain URL
+    const directUrl = getDirectPixeldrainUrl(selectedLink.link);
     await danuwa.sendMessage(from, {
-      document: { url: selectedLink.link },
+      document: { url: directUrl },
       mimetype: "video/mp4",
       fileName: `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`.replace(/[^\w\s.-]/gi,''),
-      caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* Unknown (streamed directly)\n\n*Enjoy your movie! 🍿*`
+      caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* Streaming directly from Pixeldrain\n\n*Enjoy your movie! 🍿*`
     }, { quoted: mek });
   } catch (error) {
     console.error("Send document error:", error);
@@ -213,7 +219,7 @@ cmd({
   }
 });
 
-// --- Cleanup old sessions every 10 mins ---
+// 4️⃣ Cleanup old sessions
 setInterval(() => {
   const now = Date.now();
   const timeout = 10*60*1000;
