@@ -54,6 +54,18 @@ const effects = {
         url: 'https://en.ephoto360.com/create-rainbow-text-effects-online-801.html',
         desc: 'Rainbow text effect'
     },
+    glass: {
+        url: 'https://en.ephoto360.com/create-glass-text-effect-online-821.html',
+        desc: 'Transparent glass text effect'
+    },
+    frostedGlass: {
+        url: 'https://en.ephoto360.com/create-frosted-glass-text-effect-online-822.html',
+        desc: 'Frosted glass text effect'
+    },
+    neonGlass: {
+        url: 'https://en.ephoto360.com/create-3d-neon-glass-text-effect-online-823.html',
+        desc: '3D neon glass text effect'
+    },
     
     // Metal & Luxury
     gold: {
@@ -81,6 +93,14 @@ const effects = {
     smoke: {
         url: 'https://en.ephoto360.com/create-smoky-text-effect-online-799.html',
         desc: 'Smoky text effect'
+    },
+    ice: {
+        url: 'https://en.ephoto360.com/create-ice-text-effect-online-824.html',
+        desc: 'Frozen ice text effect'
+    },
+    crystal: {
+        url: 'https://en.ephoto360.com/create-crystal-text-effect-online-825.html',
+        desc: 'Shiny crystal text effect'
     },
     
     // Professional & Modern
@@ -121,6 +141,7 @@ const effects = {
         desc: 'Galaxy text effect'
     }
 };
+
 
 // Function to create logo
 async function createLogo(effectUrl, text) {
