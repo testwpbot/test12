@@ -13,7 +13,6 @@ module.exports = {
     const content = msg.message;
     if (!content || key.fromMe) return;
 
-    // Save message for text & media
     deletedMessages[key.id] = { key, message: content };
 
     if (msg._mediaBuffer && msg._mediaType) {
@@ -59,16 +58,11 @@ module.exports = {
 
 
       try {
-        let caption = `┏━━ 🚨 *DILSHAN-MD Alert* ━━┓
+        let caption = `*Deleted message recovered*
 
 👤 *Sender:* @${sender.split('@')[0]}
 🕒 *Time:* ${new Date().toLocaleString()}
-
-⚠️ Deleted message has been successfully *recovered*.
-
-✅ Service: *DILSHAN-MD WhatsApp Assistant*
-
-┗━━━━━━━━━━━━━━━━━━━━┛`;
+`;
 
         const mediaPath = deletedMediaPath[update.key.id] || deletedMediaPath[update.update?.key?.id];
         if (mediaPath && fs.existsSync(mediaPath)) {
@@ -79,12 +73,12 @@ module.exports = {
             await conn.sendMessage(from, { video: { url: mediaPath }, ...messageOptions });
           } else if (mediaPath.endsWith('.webp')) {
             await conn.sendMessage(from, { sticker: { url: mediaPath } });
-            await conn.sendMessage(from, { text: caption, mentions: [sender] }); // 👈 Sticker caption
+            await conn.sendMessage(from, { text: caption, mentions: [sender] }); 
           } else if (mediaPath.endsWith('.ogg')) {
             await conn.sendMessage(from, {
               audio: { url: mediaPath, mimetype: 'audio/ogg; codecs=opus' }
             });
-            await conn.sendMessage(from, { text: caption, mentions: [sender] }); // 👈 Audio caption
+            await conn.sendMessage(from, { text: caption, mentions: [sender] });
           } else if (mediaPath.endsWith('.pdf')) {
             await conn.sendMessage(from, { document: { url: mediaPath }, ...messageOptions });
           } else {
