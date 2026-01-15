@@ -194,7 +194,7 @@ async function connectToWA() {
 
 // 1
 
-  conn.ev.on('messages.update', async (updates) => {
+  test.ev.on('messages.update', async (updates) => {
     if (global.pluginHooks) {
       for (const plugin of global.pluginHooks) {
         if (plugin.onDelete) {
