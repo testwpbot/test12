@@ -284,7 +284,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
   });
 
   
-  conn.ev.on('messages.update', async (updates) => {
+  test.ev.on('messages.update', async (updates) => {
     if (global.pluginHooks) {
       for (const plugin of global.pluginHooks) {
         if (plugin.onDelete) {
