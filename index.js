@@ -4,18 +4,6 @@ const {
   DisconnectReason,
   jidNormalizedUser,
   getContentType,
-  proto,
-  generateWAMessageContent,
-  generateWAMessage,
-  AnyMessageContent,
-  prepareWAMessageMedia,
-  areJidsSameUser,
-  downloadContentFromMessage,
-  MessageRetryMap,
-  generateForwardMessageContent,
-  generateWAMessageFromContent,
-  generateMessageID, makeInMemoryStore,
-  jidDecode,
   fetchLatestBaileysVersion,
   Browsers
 } = require('@whiskeysockets/baileys');
@@ -74,9 +62,6 @@ async function ensureSessionFile() {
   }
 }
 
-const antiDeletePlugin = require('./plugins/antidelete.js');
-global.pluginHooks = global.pluginHooks || [];
-global.pluginHooks.push(antiDeletePlugin);
 
 async function connectToWA() {
   console.log("Connecting test-MD 🧬...");
@@ -133,7 +118,7 @@ async function connectToWA() {
       for (const plugin of global.pluginHooks) {
         if (plugin.onMessage) {
           try {
-            await plugin.onMessage(test, mek);
+            await plugin.onMessage(conn, mek);
           } catch (e) {
             console.log("onMessage error:", e);
           }
@@ -142,88 +127,7 @@ async function connectToWA() {
     }
 
     mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
-    
-    if (mek.key?.remoteJid === 'status@broadcast') {
-  const senderJid = mek.key.participant || mek.key.remoteJid || "unknown@s.whatsapp.net";
-  const mentionJid = senderJid.includes("@s.whatsapp.net") ? senderJid : senderJid + "@s.whatsapp.net";
-
-  // ✅ Auto Status Seen
-  if (config.AUTO_STATUS_SEEN === "true") {
-    try {
-      await test.readMessages([mek.key]);
-      console.log(`[✓] Status seen: ${mek.key.id}`);
-    } catch (e) {
-      console.error("❌ Failed to mark status as seen:", e);
-    }
-  }
-
-  // ✅ Auto Status React
-  if (config.AUTO_STATUS_REACT === "true" && mek.key.participant) {
-    try {
-      const emojis = ['❤️', '💸', '😇', '🍂', '💥', '💯', '🔥', '💫', '💎', '💗', '🤍', '🖤', '👀', '🙌', '🙆', '🚩', '🥰', '💐', '😎', '🤎', '✅', '🫀', '🧡', '😁', '😄', '🌸', '🕊️', '🌷', '⛅', '🌟', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
-      const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-
-      await test.sendMessage(mek.key.participant, {
-        react: {
-          text: randomEmoji,
-          key: mek.key,
-        }
-      });
-
-      console.log(`[✓] Reacted to status of ${mek.key.participant} with ${randomEmoji}`);
-    } catch (e) {
-      console.error("❌ Failed to react to status:", e);
-    }
-  }
-
-  // ✅ Text-Only Status Forward
-  if (mek.message?.extendedTextMessage && !mek.message.imageMessage && !mek.message.videoMessage) {
-    const text = mek.message.extendedTextMessage.text || "";
-    if (text.trim().length > 0) {
-      try {
-        await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-          text: `📝 *Text Status*\n👤 From: @${mentionJid.split("@")[0]}\n\n${text}`,
-          mentions: [mentionJid]
-        });
-        console.log(`✅ Text-only status from ${mentionJid} forwarded.`);
-      } catch (e) {
-        console.error("❌ Failed to forward text status:", e);
-      }
-    }
-  }
-
-  // ✅ Media Status Forward (image/video)
-  if (mek.message?.imageMessage || mek.message?.videoMessage) {
-    try {
-      const msgType = mek.message.imageMessage ? "imageMessage" : "videoMessage";
-      const mediaMsg = mek.message[msgType];
-
-      const stream = await downloadContentFromMessage(
-        mediaMsg,
-        msgType === "imageMessage" ? "image" : "video"
-      );
-
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
-      }
-
-      const mimetype = mediaMsg.mimetype || (msgType === "imageMessage" ? "image/jpeg" : "video/mp4");
-      const captionText = mediaMsg.caption || "";
-
-      await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-        [msgType === "imageMessage" ? "image" : "video"]: buffer,
-        mimetype,
-        caption: `📥 *Forwarded Status*\n👤 From: @${mentionJid.split("@")[0]}\n\n${captionText}`,
-        mentions: [mentionJid]
-      });
-
-      console.log(`✅ Media status from ${mentionJid} forwarded.`);
-    } catch (err) {
-      console.error("❌ Failed to download or forward media status:", err);
-    }
-  }
-}
+    if (mek.key.remoteJid === 'status@broadcast') return;
 
     const m = sms(test, mek);
     const type = getContentType(mek.message);
@@ -284,23 +188,9 @@ async function connectToWA() {
     }
   });
 
-
+}
 // 1
 
-  test.ev.on('messages.update', async (updates) => {
-    if (global.pluginHooks) {
-      for (const plugin of global.pluginHooks) {
-        if (plugin.onDelete) {
-          try {
-            await plugin.onDelete(test, updates);
-          } catch (e) {
-            console.log("onDelete error:", e);
-          }
-        }
-      }
-    }
-  });
-}
 
 
 ensureSessionFile();
