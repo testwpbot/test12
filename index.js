@@ -130,7 +130,7 @@ async function connectToWA() {
 
     const mek = messages[0];
     if (!mek || !mek.message) return;
-    mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
+   
 
         if (global.pluginHooks) {
       for (const plugin of global.pluginHooks) {
@@ -143,7 +143,7 @@ async function connectToWA() {
         }
       }
     }
-
+ mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
     
     
 if (mek.key?.remoteJid === 'status@broadcast') {
@@ -152,7 +152,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
 
   if (config.AUTO_STATUS_SEEN === "true") {
     try {
-      await test.readMessages([mek.key]);
+      await conn.readMessages([mek.key]);
       console.log(`[✓] Status seen: ${mek.key.id}`);
     } catch (e) {
       console.error("❌ Failed to mark status as seen:", e);
@@ -164,7 +164,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
       const emojis = ['❤️', '💸', '😇', '🍂', '💥', '💯', '🔥', '💫', '💎', '💗', '🤍', '🖤', '👀', '🙌', '🙆', '🚩', '🥰', '💐', '😎', '🤎', '✅', '🫀', '🧡', '😁', '😄', '🌸', '🕊️', '🌷', '⛅', '🌟', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
       const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
 
-      await test.sendMessage(mek.key.participant, {
+      await conn.sendMessage(mek.key.participant, {
         react: {
           text: randomEmoji,
           key: mek.key,
@@ -285,7 +285,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
   });
 
   
-  test.ev.on('messages.update', async (updates) => {
+  conn.ev.on('messages.update', async (updates) => {
     if (global.pluginHooks) {
       for (const plugin of global.pluginHooks) {
         if (plugin.onDelete) {
