@@ -62,8 +62,9 @@ async function ensureSessionFile() {
   }
 }
 
-const { replyHandlers, commands } = require('./command');
 const antiDeletePlugin = require('./plugins/antidelete.js');
+global.pluginHooks = global.pluginHooks || [];
+global.pluginHooks.push(antiDeletePlugin);
 
 async function connectToWA() {
   console.log("Connecting test-MD 🧬...");
