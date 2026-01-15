@@ -190,7 +190,7 @@ async function connectToWA() {
       }
     }
   });
-}
+
 
 // 1
 
