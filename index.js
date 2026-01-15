@@ -62,6 +62,9 @@ async function ensureSessionFile() {
   }
 }
 
+const { replyHandlers, commands } = require('./command');
+const antiDeletePlugin = require('./plugins/antidelete.js');
+
 async function connectToWA() {
   console.log("Connecting test-MD 🧬...");
   const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, '/auth_info_baileys/'));
@@ -112,6 +115,18 @@ async function connectToWA() {
 
     const mek = messages[0];
     if (!mek || !mek.message) return;
+
+        if (global.pluginHooks) {
+      for (const plugin of global.pluginHooks) {
+        if (plugin.onMessage) {
+          try {
+            await plugin.onMessage(conn, mek);
+          } catch (e) {
+            console.log("onMessage error:", e);
+          }
+        }
+      }
+    }
 
     mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
     if (mek.key.remoteJid === 'status@broadcast') return;
@@ -175,6 +190,24 @@ async function connectToWA() {
     }
   });
 }
+
+// 1
+
+  conn.ev.on('messages.update', async (updates) => {
+    if (global.pluginHooks) {
+      for (const plugin of global.pluginHooks) {
+        if (plugin.onDelete) {
+          try {
+            await plugin.onDelete(conn, updates);
+          } catch (e) {
+            console.log("onDelete error:", e);
+          }
+        }
+      }
+    }
+  });
+}
+
 
 ensureSessionFile();
 
