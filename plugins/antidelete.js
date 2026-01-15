@@ -1,120 +1,192 @@
 const fs = require('fs');
 const path = require('path');
-
-let deletedMessages = {};
-let deletedMediaPath = {};
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 const tempFolder = path.join(__dirname, '../temp');
-if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder, { recursive: true });
+if (!fs.existsSync(tempFolder)) {
+  fs.mkdirSync(tempFolder, { recursive: true });
+}
+
+// In-memory stores
+const messageStore = new Map();   // key.id -> message data
+const mediaStore = new Map();     // key.id -> file path
+
+// Auto cleanup (10 minutes)
+const CLEANUP_TIME = 10 * 60 * 1000;
+
+function unwrapMessage(message) {
+  if (!message) return null;
+
+  if (message.ephemeralMessage) {
+    return unwrapMessage(message.ephemeralMessage.message);
+  }
+
+  if (message.viewOnceMessageV2) {
+    return unwrapMessage(message.viewOnceMessageV2.message);
+  }
+
+  if (message.viewOnceMessage) {
+    return unwrapMessage(message.viewOnceMessage.message);
+  }
+
+  return message;
+}
+
+function getExtension(type, msg) {
+  switch (type) {
+    case 'imageMessage': return '.jpg';
+    case 'videoMessage': return '.mp4';
+    case 'audioMessage': return '.ogg';
+    case 'stickerMessage': return '.webp';
+    case 'documentMessage':
+      return msg.documentMessage?.fileName
+        ? path.extname(msg.documentMessage.fileName)
+        : '.bin';
+    default:
+      return '.bin';
+  }
+}
 
 module.exports = {
+  name: 'antidelete',
+
+  // Called on message receive
   onMessage: async (conn, msg) => {
-    const key = msg.key;
-    const content = msg.message;
-    if (!content || key.fromMe) return;
+    if (!msg?.message || msg.key.fromMe) return;
 
-    deletedMessages[key.id] = { key, message: content };
+    const keyId = msg.key.id;
+    const remoteJid = msg.key.remoteJid;
 
-    if (msg._mediaBuffer && msg._mediaType) {
-      let ext = '.bin';
-      if (msg._mediaType === 'imageMessage') ext = '.jpg';
-      else if (msg._mediaType === 'videoMessage') ext = '.mp4';
-      else if (msg._mediaType === 'audioMessage') ext = '.ogg';
-      else if (msg._mediaType === 'stickerMessage') ext = '.webp';
-      else if (msg._mediaType === 'documentMessage') {
-        ext = msg.message.documentMessage?.fileName
-          ? path.extname(msg.message.documentMessage.fileName)
-          : '.bin';
+    const cleanMessage = unwrapMessage(msg.message);
+    if (!cleanMessage) return;
+
+    // Store message text structure
+    messageStore.set(keyId, {
+      key: msg.key,
+      message: cleanMessage,
+      remoteJid
+    });
+
+    // Detect media
+    const type = Object.keys(cleanMessage)[0];
+    if (!type) return;
+
+    const mediaTypes = [
+      'imageMessage',
+      'videoMessage',
+      'audioMessage',
+      'stickerMessage',
+      'documentMessage'
+    ];
+
+    if (!mediaTypes.includes(type)) return;
+
+    try {
+      const stream = await downloadContentFromMessage(
+        cleanMessage[type],
+        type.replace('Message', '')
+      );
+
+      let buffer = Buffer.from([]);
+      for await (const chunk of stream) {
+        buffer = Buffer.concat([buffer, chunk]);
       }
 
-      const fileName = `${key.id}${ext}`;
-      const filePath = path.join(tempFolder, fileName);
-      try {
-        await fs.promises.writeFile(filePath, msg._mediaBuffer);
-        deletedMediaPath[key.id] = filePath;
-      } catch (e) {
-        console.log('❌ Media save failed:', e.message);
-      }
+      if (!buffer.length) return;
+
+      const ext = getExtension(type, cleanMessage);
+      const filePath = path.join(tempFolder, `${keyId}${ext}`);
+
+      await fs.promises.writeFile(filePath, buffer);
+      mediaStore.set(keyId, filePath);
+
+      // Cleanup later
+      setTimeout(() => {
+        messageStore.delete(keyId);
+        if (mediaStore.has(keyId)) {
+          try { fs.unlinkSync(mediaStore.get(keyId)); } catch {}
+          mediaStore.delete(keyId);
+        }
+      }, CLEANUP_TIME);
+
+    } catch (err) {
+      console.log('❌ AntiDelete media download error:', err.message);
     }
   },
 
+  // Called on delete event
   onDelete: async (conn, updates) => {
     for (const update of updates) {
-      if (!update || !update.key) continue;
+      const key = update?.key;
+      if (!key?.id) continue;
 
-      const isDeleteEvent = update.action === 'delete' || update.update?.message === null;
-      if (!isDeleteEvent) continue;
+      const isDelete =
+        update.action === 'delete' ||
+        update.update?.message === null;
 
-      const from = update.key.remoteJid;
-      const sender = update.key.participant || from;
+      if (!isDelete) continue;
 
-      const deleted =
-        deletedMessages[update.key.id] ||
-        deletedMessages[update.update?.key?.id];
+      const keyId = key.id;
+      const stored = messageStore.get(keyId);
+      if (!stored) continue;
 
-      if (!deleted) {
-        continue;
-      }
+      const from = key.remoteJid;
+      const sender = key.participant || from;
 
-
-      try {
-        let caption = `*Deleted message recovered*
+      let caption =
+`🗑️ *Deleted Message Recovered*
 
 👤 *Sender:* @${sender.split('@')[0]}
-🕒 *Time:* ${new Date().toLocaleString()}
-`;
+🕒 *Time:* ${new Date().toLocaleString()}`;
 
-        const mediaPath = deletedMediaPath[update.key.id] || deletedMediaPath[update.update?.key?.id];
+      try {
+        // Media recovery
+        const mediaPath = mediaStore.get(keyId);
         if (mediaPath && fs.existsSync(mediaPath)) {
-          let messageOptions = { caption, mentions: [sender] };
+          const opts = { caption, mentions: [sender] };
+
           if (mediaPath.endsWith('.jpg')) {
-            await conn.sendMessage(from, { image: { url: mediaPath }, ...messageOptions });
+            await conn.sendMessage(from, { image: { url: mediaPath }, ...opts });
           } else if (mediaPath.endsWith('.mp4')) {
-            await conn.sendMessage(from, { video: { url: mediaPath }, ...messageOptions });
+            await conn.sendMessage(from, { video: { url: mediaPath }, ...opts });
           } else if (mediaPath.endsWith('.webp')) {
             await conn.sendMessage(from, { sticker: { url: mediaPath } });
-            await conn.sendMessage(from, { text: caption, mentions: [sender] }); 
+            await conn.sendMessage(from, { text: caption, mentions: [sender] });
           } else if (mediaPath.endsWith('.ogg')) {
             await conn.sendMessage(from, {
-              audio: { url: mediaPath, mimetype: 'audio/ogg; codecs=opus' }
+              audio: { url: mediaPath },
+              mimetype: 'audio/ogg; codecs=opus'
             });
             await conn.sendMessage(from, { text: caption, mentions: [sender] });
-          } else if (mediaPath.endsWith('.pdf')) {
-            await conn.sendMessage(from, { document: { url: mediaPath }, ...messageOptions });
           } else {
-            await conn.sendMessage(from, { document: { url: mediaPath }, ...messageOptions });
-          }
-        } else {
-          let textMessage = null;
-
-          if (deleted.message.conversation) {
-            textMessage = deleted.message.conversation;
-          } else if (deleted.message.extendedTextMessage && deleted.message.extendedTextMessage.text) {
-            textMessage = deleted.message.extendedTextMessage.text;
-          } else if (deleted.message.imageMessage && deleted.message.imageMessage.caption) {
-            textMessage = deleted.message.imageMessage.caption;
-          } else if (deleted.message.videoMessage && deleted.message.videoMessage.caption) {
-            textMessage = deleted.message.videoMessage.caption;
-          } else if (deleted.message.documentMessage && deleted.message.documentMessage.caption) {
-            textMessage = deleted.message.documentMessage.caption;
-          } else {
-            const msgValues = Object.values(deleted.message);
-            for (const val of msgValues) {
-              if (val?.text) {
-                textMessage = val.text;
-                break;
-              }
-            }
+            await conn.sendMessage(from, {
+              document: { url: mediaPath },
+              ...opts
+            });
           }
 
-          if (textMessage) {
-            await conn.sendMessage(from, { text: caption + `\n\n📝 *Message:* ${textMessage}`, mentions: [sender] });
-          } else {
-            await conn.sendMessage(from, { text: caption, mentions: [sender] });
-          }
+          continue;
         }
-      } catch (e) {
-        console.log('❌ Error resending deleted message:', e);
+
+        // Text fallback
+        const msgObj = stored.message;
+        let text =
+          msgObj.conversation ||
+          msgObj.extendedTextMessage?.text ||
+          msgObj.imageMessage?.caption ||
+          msgObj.videoMessage?.caption ||
+          msgObj.documentMessage?.caption ||
+          '';
+
+        await conn.sendMessage(from, {
+          text: text
+            ? `${caption}\n\n📝 *Message:* ${text}`
+            : caption,
+          mentions: [sender]
+        });
+
+      } catch (err) {
+        console.log('❌ AntiDelete resend error:', err.message);
       }
     }
   }
