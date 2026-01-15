@@ -82,7 +82,7 @@ async function connectToWA() {
     generateHighQualityLinkPreview: true,
   });
 
-  conn.ev.on('connection.update', async (update) => {
+  test.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === 'close') {
       if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
@@ -105,9 +105,9 @@ async function connectToWA() {
     }
   });
 
-  conn.ev.on('creds.update', saveCreds);
+  test.ev.on('creds.update', saveCreds);
 
-  conn.ev.on('messages.upsert', async ({ messages }) => {
+  test.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       if (msg.messageStubType === 68) {
         await test.sendMessageAck(msg.key);
@@ -121,7 +121,7 @@ async function connectToWA() {
       for (const plugin of global.pluginHooks) {
         if (plugin.onMessage) {
           try {
-            await plugin.onMessage(conn, mek);
+            await plugin.onMessage(test, mek);
           } catch (e) {
             console.log("onMessage error:", e);
           }
@@ -194,12 +194,12 @@ async function connectToWA() {
 
 // 1
 
-  conn.ev.on('messages.update', async (updates) => {
+  test.ev.on('messages.update', async (updates) => {
     if (global.pluginHooks) {
       for (const plugin of global.pluginHooks) {
         if (plugin.onDelete) {
           try {
-            await plugin.onDelete(conn, updates);
+            await plugin.onDelete(test, updates);
           } catch (e) {
             console.log("onDelete error:", e);
           }
