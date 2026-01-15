@@ -82,7 +82,7 @@ async function connectToWA() {
     generateHighQualityLinkPreview: true,
   });
 
-  test.ev.on('connection.update', async (update) => {
+  conn.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === 'close') {
       if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
@@ -105,9 +105,9 @@ async function connectToWA() {
     }
   });
 
-  test.ev.on('creds.update', saveCreds);
+  conn.ev.on('creds.update', saveCreds);
 
-  test.ev.on('messages.upsert', async ({ messages }) => {
+  conn.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       if (msg.messageStubType === 68) {
         await test.sendMessageAck(msg.key);
@@ -194,7 +194,7 @@ async function connectToWA() {
 
 // 1
 
-  test.ev.on('messages.update', async (updates) => {
+  conn.ev.on('messages.update', async (updates) => {
     if (global.pluginHooks) {
       for (const plugin of global.pluginHooks) {
         if (plugin.onDelete) {
