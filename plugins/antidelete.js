@@ -7,11 +7,9 @@ if (!fs.existsSync(tempFolder)) {
   fs.mkdirSync(tempFolder, { recursive: true });
 }
 
-// In-memory stores
-const messageStore = new Map();   // key.id -> message data
-const mediaStore = new Map();     // key.id -> file path
+const messageStore = new Map();
+const mediaStore = new Map(); 
 
-// Auto cleanup (10 minutes)
 const CLEANUP_TIME = 10 * 60 * 1000;
 
 function unwrapMessage(message) {
@@ -50,7 +48,6 @@ function getExtension(type, msg) {
 module.exports = {
   name: 'antidelete',
 
-  // Called on message receive
   onMessage: async (conn, msg) => {
     if (!msg?.message || msg.key.fromMe) return;
 
@@ -60,14 +57,12 @@ module.exports = {
     const cleanMessage = unwrapMessage(msg.message);
     if (!cleanMessage) return;
 
-    // Store message text structure
     messageStore.set(keyId, {
       key: msg.key,
       message: cleanMessage,
       remoteJid
     });
 
-    // Detect media
     const type = Object.keys(cleanMessage)[0];
     if (!type) return;
 
@@ -100,7 +95,6 @@ module.exports = {
       await fs.promises.writeFile(filePath, buffer);
       mediaStore.set(keyId, filePath);
 
-      // Cleanup later
       setTimeout(() => {
         messageStore.delete(keyId);
         if (mediaStore.has(keyId)) {
@@ -114,7 +108,6 @@ module.exports = {
     }
   },
 
-  // Called on delete event
   onDelete: async (conn, updates) => {
     for (const update of updates) {
       const key = update?.key;
@@ -140,7 +133,6 @@ module.exports = {
 🕒 *Time:* ${new Date().toLocaleString()}`;
 
       try {
-        // Media recovery
         const mediaPath = mediaStore.get(keyId);
         if (mediaPath && fs.existsSync(mediaPath)) {
           const opts = { caption, mentions: [sender] };
@@ -168,7 +160,6 @@ module.exports = {
           continue;
         }
 
-        // Text fallback
         const msgObj = stored.message;
         let text =
           msgObj.conversation ||
