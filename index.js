@@ -289,7 +289,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
       for (const plugin of global.pluginHooks) {
         if (plugin.onDelete) {
           try {
-            await plugin.onDelete(test, updates);
+            await plugin.onDelete(conn, updates);
           } catch (e) {
             console.log("onDelete error:", e);
           }
