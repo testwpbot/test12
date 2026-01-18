@@ -3,8 +3,7 @@ const puppeteer = require("puppeteer");
 const { sendButtons } = require("gifted-btns");
 
 const pendingSearch = {};
-const pendingQuality = {};
-
+const pendingQuality = [];
 
 function normalizeQuality(text) {
   if (!text) return null;
@@ -21,6 +20,7 @@ function getDirectPixeldrainUrl(url) {
   return `https://pixeldrain.com/api/file/${match[1]}?download`;
 }
 
+// --- Puppeteer scrapers (unchanged) ---
 async function searchMovies(query) {
   const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}&post_type=movies`;
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
@@ -109,7 +109,8 @@ async function getPixeldrainLinks(movieUrl) {
   await browser.close();
   return directLinks;
 }
-// Search movies command
+
+// --- Search movie command ---
 cmd({
   pattern: "movie",
   alias: ["sinhalasub","films","cinema"],
@@ -135,12 +136,10 @@ cmd({
   reply(text);
 });
 
-// Select movie
+// --- Select movie ---
 cmd({
   filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
-}, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
-
+}, async (danuwa, mek, m, { body, sender, reply, from, quoted }) => {
   const index = parseInt(body.trim()) - 1;
   const selected = pendingSearch[sender].results[index];
   delete pendingSearch[sender];
@@ -163,11 +162,10 @@ cmd({
 
   pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
 
-  // ===== FIXED: Proper gifted-btns button payload =====
+  // --- LEGACY BUTTONS for gifted-btns ---
   const buttons = downloadLinks.map((d, i) => ({
-    buttonId: `MOVIE_${i}`,               // ✅ buttonId instead of id
-    buttonText: { displayText: `${d.quality} - ${d.size}` },
-    type: 1                                // quick reply
+    id: `MOVIE_${i}`,        // ✅ legacy 'id'
+    text: `${d.quality} - ${d.size}`  // ✅ legacy 'text'
   }));
 
   await sendButtons(danuwa, from, {
@@ -177,13 +175,11 @@ cmd({
   }, { quoted: mek });
 });
 
-// Select quality via buttons
+// --- Select quality via buttons ---
 cmd({
   filter: (text, { sender }) => pendingQuality[sender] && text.startsWith("MOVIE_")
-}, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
-
-  const index = parseInt(body.replace("MOVIE_", "")); 
+}, async (danuwa, mek, m, { body, sender, reply, from, quoted }) => {
+  const index = parseInt(body.replace("MOVIE_", ""));
   const { movie } = pendingQuality[sender];
   delete pendingQuality[sender];
 
@@ -204,7 +200,7 @@ cmd({
   }
 });
 
-// === Cleanup old searches & qualities ===
+// --- Cleanup old searches & qualities ---
 setInterval(() => {
   const now = Date.now();
   const timeout = 10*60*1000;
