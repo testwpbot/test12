@@ -9,7 +9,7 @@
     "restart": "pm2 restart DANUWA-MD"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@rexxhayanasi/elaina-baileys": "^1.2.2-rc.8",
     "api-dylux": "^1.8.5",
     "axios": "^1.9.0",
     "browser-id3-writer": "^6.2.0",
