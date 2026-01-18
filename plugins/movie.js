@@ -176,14 +176,19 @@ cmd({
 });
 
 // --- Select quality via buttons ---
+// --- Select quality via buttons ---
 cmd({
-  filter: (text, { sender }) => pendingQuality[sender] && text.startsWith("MOVIE_")
+  filter: (text, { sender }) => pendingQuality[sender] && text // any text from button
 }, async (danuwa, mek, m, { body, sender, reply, from, quoted }) => {
-  const index = parseInt(body.replace("MOVIE_", ""));
   const { movie } = pendingQuality[sender];
-  delete pendingQuality[sender];
+
+  // --- Match the button ID sent by WhatsApp ---
+  const index = movie.downloadLinks.findIndex((_, i) => body === `MOVIE_${i}`);
+  if (index === -1) return reply("*❌ Invalid selection!*");
 
   const selectedLink = movie.downloadLinks[index];
+  delete pendingQuality[sender]; // remove after selection
+
   reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
 
   try {
@@ -199,6 +204,7 @@ cmd({
     reply(`*❌ Failed to send movie:* ${error.message || "Unknown error"}`);
   }
 });
+
 
 // --- Cleanup old searches & qualities ---
 setInterval(() => {
