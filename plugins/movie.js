@@ -1,10 +1,16 @@
-
 const { cmd } = require("../command");
 const { sendButtons } = require("gifted-btns");
 const puppeteer = require("puppeteer");
 
 const pendingSearch = {};
 const pendingQuality = {};
+
+// Debug function
+function debugLog(message, data = null) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] DEBUG: ${message}`);
+  if (data) console.log(JSON.stringify(data, null, 2));
+}
 
 function normalizeQuality(text) {
   if (!text) return null;
@@ -123,6 +129,7 @@ cmd({
   category: "download",
   filename: __filename
 }, async (danuwa, mek, m, { from, q, sender, reply }) => {
+  debugLog("Movie command received", { sender, query: q });
   if (!q) return reply(`*🎬 Movie Search Plugin*\nUsage: movie_name\nExample: movie avengers`);
   reply("*🔍 Searching for movies...*");
   const searchResults = await searchMovies(q);
@@ -137,8 +144,13 @@ cmd({
 });
 
 cmd({
-  filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
+  filter: (text, { sender }) => {
+    if (!pendingSearch[sender]) return false;
+    const num = parseInt(text);
+    return !isNaN(num) && num > 0 && num <= pendingSearch[sender].results.length;
+  }
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
+  debugLog("Movie selection received", { sender, selection: body });
   await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
   const index = parseInt(body.trim()) - 1;
   const selected = pendingSearch[sender].results[index];
@@ -156,42 +168,44 @@ cmd({
   }
   
   const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
+  debugLog("Download links fetched", { 
+    sender, 
+    movie: metadata.title, 
+    linksCount: downloadLinks.length,
+    links: downloadLinks.map(l => ({ quality: l.quality, size: l.size, link: l.link }))
+  });
+  
   if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
   
-  // Create unique session ID for this user
-  const sessionId = Date.now().toString(36) + Math.random().toString(36).substr(2);
-  
-  // Store session data
-  pendingQuality[sessionId] = { 
-    sender: sender,
+  // Store with simple structure
+  pendingQuality[sender] = { 
     movie: { 
       metadata, 
-      downloadLinks,
-      movieUrl: selected.movieUrl
+      downloadLinks
     }, 
     timestamp: Date.now()
   };
   
-  // Create buttons for quality selection
+  // Create buttons
   const buttons = [];
-  
   downloadLinks.forEach((d, i) => {
-    // Each button gets a unique ID that includes the session ID and quality index
-    const buttonId = `${sessionId}_${i}`;
-    
     buttons.push({
-      id: buttonId,
+      id: `quality_${i}`, // Simple ID format
       text: `${d.quality} - ${d.size}`
     });
   });
   
-  // Add a cancel button
   buttons.push({
-    id: `${sessionId}_cancel`,
+    id: "cancel",
     text: "❌ Cancel"
   });
   
-  // Send quality selection buttons
+  debugLog("Sending buttons", { 
+    sender, 
+    buttonCount: buttons.length,
+    buttonIds: buttons.map(b => b.id)
+  });
+  
   try {
     await sendButtons(danuwa, from, {
       text: `*📥 Available Qualities (Max 2GB)*\n*🎬 Movie:* ${metadata.title.substring(0, 50)}${metadata.title.length > 50 ? '...' : ''}`,
@@ -200,99 +214,99 @@ cmd({
     }, { quoted: mek });
   } catch (error) {
     console.error("Error sending buttons:", error);
-    // Fallback to text-based selection
-    let qualityMsg = "*📥 Available Qualities (Max 2GB):*\n";
+    // Fallback to text
+    let qualityMsg = "*📥 Available Qualities:*\n";
     downloadLinks.forEach((d,i) => qualityMsg += `*${i+1}.* ${d.quality} - ${d.size}\n`);
-    qualityMsg += `\n*Reply with quality number (1-${downloadLinks.length})*`;
-    pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
+    qualityMsg += `\n*Reply with number (1-${downloadLinks.length})*`;
     await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: mek });
   }
 });
 
-// Handle button clicks for quality selection
+// IMPORTANT: This is the key handler for button clicks
+// We need to catch ALL messages and check if they are button responses
 cmd({
-  pattern: "movie_button", // We'll use a pattern to catch button clicks
-  fromMe: false,
-  desc: "Handle movie quality button clicks",
-  dontAddCommandList: true
-}, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  // Check if this is a button response
-  if (!body || typeof body !== 'string') return;
+  on: "message" // Catch all messages
+}, async (danuwa, mek, m, { body, sender, from, reply }) => {
+  // Only process if there's pending quality for this sender
+  if (!pendingQuality[sender]) return;
   
-  // Parse the button ID
-  const buttonId = body.trim();
+  const messageText = body?.trim() || "";
+  debugLog("Message received from user with pending quality", {
+    sender,
+    messageText,
+    pendingQuality: !!pendingQuality[sender],
+    isButtonResponse: /^(quality_\d+|cancel)$/.test(messageText)
+  });
   
-  // Find which session this belongs to
-  let foundSession = null;
-  let qualityIndex = null;
-  let isCancel = false;
-  
-  for (const sessionId in pendingQuality) {
-    const session = pendingQuality[sessionId];
-    
-    // Check if sender matches
-    if (session.sender !== sender) continue;
-    
-    // Check if button ID matches any quality button
-    const parts = buttonId.split('_');
-    const baseSessionId = parts[0] + '_' + parts[1];
-    
-    if (sessionId.startsWith(baseSessionId)) {
-      foundSession = session;
-      
-      // Check if it's a cancel button
-      if (buttonId.includes('cancel')) {
-        isCancel = true;
-        break;
-      }
-      
-      // Extract quality index from button ID
-      const lastPart = parts[parts.length - 1];
-      qualityIndex = parseInt(lastPart);
-      
-      if (!isNaN(qualityIndex) && qualityIndex >= 0 && qualityIndex < session.movie.downloadLinks.length) {
-        break;
-      }
-    }
+  // Check if this is a button response (quality_0, quality_1, etc. or cancel)
+  if (!/^(quality_\d+|cancel)$/.test(messageText)) {
+    return; // Not a button response
   }
   
-  if (!foundSession) {
-    // Not a movie quality button click
+  debugLog("BUTTON CLICK DETECTED!", {
+    sender,
+    buttonId: messageText,
+    pendingMovie: pendingQuality[sender]?.movie?.metadata?.title
+  });
+  
+  // Handle cancel
+  if (messageText === "cancel") {
+    debugLog("Cancel button clicked", { sender });
+    delete pendingQuality[sender];
+    await danuwa.sendMessage(from, { 
+      text: "*❌ Download cancelled*",
+      react: { text: "❌", key: m.key }
+    });
     return;
   }
   
-  // React to acknowledge button click
+  // Extract quality index
+  const match = messageText.match(/quality_(\d+)/);
+  if (!match) return;
+  
+  const qualityIndex = parseInt(match[1]);
+  const session = pendingQuality[sender];
+  
+  if (!session || !session.movie || !session.movie.downloadLinks) {
+    debugLog("Invalid session or no download links", { sender, session });
+    return;
+  }
+  
+  if (qualityIndex < 0 || qualityIndex >= session.movie.downloadLinks.length) {
+    debugLog("Invalid quality index", { sender, qualityIndex, maxIndex: session.movie.downloadLinks.length - 1 });
+    return;
+  }
+  
+  const selectedLink = session.movie.downloadLinks[qualityIndex];
+  const metadata = session.movie.metadata;
+  
+  debugLog("Processing button click for quality", {
+    sender,
+    qualityIndex,
+    quality: selectedLink.quality,
+    size: selectedLink.size,
+    pixeldrainLink: selectedLink.link,
+    movie: metadata.title
+  });
+  
+  // React to acknowledge
   await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
-  
-  // Handle cancel button
-  if (isCancel) {
-    delete pendingQuality[foundSession.sender];
-    await danuwa.sendMessage(from, { 
-      text: "*❌ Download cancelled*"
-    }, { quoted: mek });
-    return;
-  }
-  
-  if (qualityIndex === null || qualityIndex === undefined) {
-    await danuwa.sendMessage(from, { 
-      text: "*❌ Invalid selection. Please try again.*"
-    }, { quoted: mek });
-    return;
-  }
-  
-  const { movie } = foundSession;
-  const selectedLink = movie.downloadLinks[qualityIndex];
   
   // Send processing message
   const processingMsg = await danuwa.sendMessage(from, { 
-    text: `*⬇️ Preparing ${selectedLink.quality} quality...*\nPlease wait while we fetch your movie.\nThis may take a few seconds...`
-  }, { quoted: mek });
+    text: `*⬇️ Preparing ${selectedLink.quality} quality...*\nPlease wait while we fetch your movie...\n\n*Pixeldrain Link:*\n${selectedLink.link}`
+  }, { quoted: m });
   
   try {
     const directUrl = getDirectPixeldrainUrl(selectedLink.link);
     if (!directUrl) {
       throw new Error("Could not get direct download URL");
     }
+    
+    debugLog("Got direct download URL", {
+      original: selectedLink.link,
+      direct: directUrl
+    });
     
     // Sanitize filename
     const sanitizeFilename = (title, quality) => {
@@ -302,96 +316,88 @@ cmd({
         .trim();
     };
     
-    const fileName = sanitizeFilename(movie.metadata.title, selectedLink.quality);
+    const fileName = sanitizeFilename(metadata.title, selectedLink.quality);
+    
+    debugLog("Sending document", {
+      fileName,
+      directUrl,
+      mimetype: "video/mp4"
+    });
     
     // Send movie as document
     await danuwa.sendMessage(from, {
       document: { url: directUrl },
       mimetype: "video/mp4",
       fileName: fileName,
-      caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* ${selectedLink.size}\n\n*Enjoy your movie! 🍿*`
-    }, { quoted: mek });
+      caption: `*🎬 ${metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* ${selectedLink.size}\n\n*Enjoy your movie! 🍿*`
+    }, { quoted: m });
     
-    // Clean up the session
-    delete pendingQuality[foundSession.sender];
+    // Clean up
+    delete pendingQuality[sender];
+    debugLog("Download completed successfully", { sender, movie: metadata.title });
     
   } catch (error) {
     console.error("Download error:", error);
+    debugLog("Download failed", {
+      sender,
+      error: error.message,
+      stack: error.stack
+    });
     
     // Send error message
     await danuwa.sendMessage(from, { 
-      text: `*❌ Download failed*\nError: ${error.message || "Unknown error"}\n\nPlease try the command again.`
-    }, { quoted: mek });
+      text: `*❌ Download failed*\nError: ${error.message || "Unknown error"}\n\nPlease try again.`
+    }, { quoted: m });
   }
 });
 
-// Alternative: Handle button clicks via the interactive response
-// This handles the actual button response from gifted-btns
+// Alternative: Direct handler for button clicks
+// Try this if the above doesn't work
 cmd({
-  filter: (text, { sender }) => {
-    // Check if this looks like a button response (sessionId_0, sessionId_1, etc.)
-    return /^[a-z0-9]+_[a-z0-9]+(_\d+)?$/.test(text);
-  }
-}, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  const buttonId = body.trim();
+  pattern: "movie_btn", // Create a pattern to catch button responses
+  fromMe: false,
+  desc: "Handle movie button clicks",
+  dontAddCommandList: true
+}, async (danuwa, mek, m, { body, sender, from }) => {
+  debugLog("movie_btn handler triggered", { sender, body });
   
-  // Find session by sender first
-  for (const sessionId in pendingQuality) {
-    const session = pendingQuality[sessionId];
-    if (session.sender === sender) {
-      // This is our user's session
-      const parts = buttonId.split('_');
-      
-      // Handle cancel
-      if (buttonId.includes('cancel')) {
-        delete pendingQuality[sessionId];
-        await danuwa.sendMessage(from, { 
-          text: "*❌ Download cancelled*"
-        }, { quoted: mek });
-        return;
-      }
-      
-      // Extract quality index
-      const lastPart = parts[parts.length - 1];
-      const qualityIndex = parseInt(lastPart);
-      
-      if (!isNaN(qualityIndex) && qualityIndex >= 0 && qualityIndex < session.movie.downloadLinks.length) {
-        const { movie } = session;
-        const selectedLink = movie.downloadLinks[qualityIndex];
-        
-        // React to acknowledge
-        await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
-        
-        // Send processing message
-        await danuwa.sendMessage(from, { 
-          text: `*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`
-        }, { quoted: mek });
-        
-        try {
-          const directUrl = getDirectPixeldrainUrl(selectedLink.link);
-          if (!directUrl) throw new Error("No direct URL");
-          
-          const fileName = `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`.replace(/[^\w\s.-]/gi,'');
-          
-          await danuwa.sendMessage(from, {
-            document: { url: directUrl },
-            mimetype: "video/mp4",
-            fileName: fileName,
-            caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* ${selectedLink.size}\n\n*Enjoy your movie! 🍿*`
-          }, { quoted: mek });
-          
-          delete pendingQuality[sessionId];
-          return;
-        } catch (error) {
-          console.error("Send document error:", error);
-          await danuwa.sendMessage(from, { 
-            text: `*❌ Failed to send movie:* ${error.message || "Unknown error"}`
-          }, { quoted: mek });
-          return;
-        }
-      }
-    }
+  if (!pendingQuality[sender]) {
+    debugLog("No pending quality for sender", { sender });
+    return;
   }
+  
+  const messageText = body?.trim() || "";
+  debugLog("Processing as button response", { sender, messageText });
+  
+  // Rest of the button handling logic same as above...
+  // Copy the button handling logic from the previous handler here
+});
+
+// Add a debug command to check pending sessions
+cmd({
+  pattern: "debug_movie",
+  desc: "Debug movie plugin state",
+  category: "debug"
+}, async (danuwa, mek, m, { sender, reply }) => {
+  debugLog("Debug command called", { sender });
+  
+  const pendingSearchCount = Object.keys(pendingSearch).length;
+  const pendingQualityCount = Object.keys(pendingQuality).length;
+  
+  let debugMsg = `*🎬 Movie Plugin Debug Info*\n\n`;
+  debugMsg += `*Pending Searches:* ${pendingSearchCount}\n`;
+  debugMsg += `*Pending Qualities:* ${pendingQualityCount}\n\n`;
+  
+  if (pendingQuality[sender]) {
+    const session = pendingQuality[sender];
+    debugMsg += `*Your Session:*\n`;
+    debugMsg += `• Movie: ${session.movie.metadata.title}\n`;
+    debugMsg += `• Available Qualities: ${session.movie.downloadLinks.length}\n`;
+    debugMsg += `• Qualities: ${session.movie.downloadLinks.map((l, i) => `\n  ${i}. ${l.quality} - ${l.size}`).join('')}\n`;
+    debugMsg += `• Links: ${session.movie.downloadLinks.map((l, i) => `\n  ${i}. ${l.link}`).join('')}\n`;
+  }
+  
+  await reply(debugMsg);
 });
 
 // Keep the session cleanup
