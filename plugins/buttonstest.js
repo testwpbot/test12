@@ -1,31 +1,23 @@
 const { cmd } = require("../command");
+const { sendButtons } = require("gifted-btns");
 
 cmd({
   pattern: "bt",
   alias: ["buttontest", "buttons"],
   react: "🧪",
-  desc: "Test WhatsApp buttons (Elaina Baileys)",
+  desc: "Test WhatsApp buttons (official Baileys + gifted-btns)",
   category: "test",
   filename: __filename
-}, async (danuwa, mek, m, { from, reply }) => {
+}, async (danuwa, mek, { from }) => {
 
-  // Button array
   const buttons = [
-    { buttonId: "BTN_PING", buttonText: { displayText: "🏓 Ping" }, type: 1 },
-    { buttonId: "BTN_ALIVE", buttonText: { displayText: "🤖 Alive" }, type: 1 }
+    { id: "BTN_PING", text: "🏓 Ping" },
+    { id: "BTN_ALIVE", text: "🤖 Alive" }
   ];
 
-  try {
-    await danuwa.sendMessage(from, {
-      text: "🎬 Button Test\nClick one of the buttons below 👇",
-      footer: "test-MD • Button Test",
-      buttons,
-      headerType: 1
-    }, { quoted: mek });
-
-  } catch (error) {
-    console.error("❌ Failed to send buttons:", error);
-    reply("*❌ Failed to send buttons*");
-  }
-
+  await sendButtons(danuwa, from, {
+    text: "🎬 Button Test",
+    footer: "test-MD • Button Test",
+    buttons
+  });
 });
