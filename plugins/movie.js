@@ -3,8 +3,9 @@ const puppeteer = require("puppeteer");
 const { sendButtons } = require("gifted-btns");
 
 const pendingSearch = {};
-const pendingQuality = [];
+const pendingQuality = {};
 
+// Normalize quality
 function normalizeQuality(text) {
   if (!text) return null;
   text = text.toUpperCase();
@@ -20,7 +21,7 @@ function getDirectPixeldrainUrl(url) {
   return `https://pixeldrain.com/api/file/${match[1]}?download`;
 }
 
-// --- Puppeteer scrapers (unchanged) ---
+// --- Puppeteer scrapers ---
 async function searchMovies(query) {
   const searchUrl = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}&post_type=movies`;
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
@@ -110,7 +111,7 @@ async function getPixeldrainLinks(movieUrl) {
   return directLinks;
 }
 
-// --- Search movie command ---
+// --- Search command ---
 cmd({
   pattern: "movie",
   alias: ["sinhalasub","films","cinema"],
@@ -162,10 +163,10 @@ cmd({
 
   pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
 
-  // --- LEGACY BUTTONS for gifted-btns ---
+  // --- Send legacy buttons ---
   const buttons = downloadLinks.map((d, i) => ({
-    id: `MOVIE_${i}`,        // ✅ legacy 'id'
-    text: `${d.quality} - ${d.size}`  // ✅ legacy 'text'
+    id: `MOVIE_${i}`,
+    text: `${d.quality} - ${d.size}`
   }));
 
   await sendButtons(danuwa, from, {
@@ -175,19 +176,16 @@ cmd({
   }, { quoted: mek });
 });
 
-// --- Select quality via buttons ---
-// --- Select quality via buttons ---
+// --- Handle quality selection via button ---
 cmd({
-  filter: (text, { sender }) => pendingQuality[sender] && text // any text from button
+  filter: (text, { sender }) => pendingQuality[sender] && text // any button click
 }, async (danuwa, mek, m, { body, sender, reply, from, quoted }) => {
   const { movie } = pendingQuality[sender];
-
-  // --- Match the button ID sent by WhatsApp ---
   const index = movie.downloadLinks.findIndex((_, i) => body === `MOVIE_${i}`);
   if (index === -1) return reply("*❌ Invalid selection!*");
 
   const selectedLink = movie.downloadLinks[index];
-  delete pendingQuality[sender]; // remove after selection
+  delete pendingQuality[sender];
 
   reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
 
@@ -205,8 +203,7 @@ cmd({
   }
 });
 
-
-// --- Cleanup old searches & qualities ---
+// --- Cleanup ---
 setInterval(() => {
   const now = Date.now();
   const timeout = 10*60*1000;
