@@ -5,19 +5,29 @@ cmd({
   pattern: "bt",
   alias: ["buttontest", "buttons"],
   react: "🧪",
-  desc: "Test WhatsApp buttons (official Baileys + gifted-btns)",
+  desc: "Test WhatsApp buttons (gifted-btns)",
   category: "test",
   filename: __filename
-}, async (danuwa, mek, { from }) => {
+}, async (danuwa, mek, m, { from, quoted, body }) => {
+  try {
+    // 'danuwa' is your main Baileys socket, must have 'user' and 'relayMessage'
+    if (!danuwa.user) return console.log("❌ Socket missing 'user' property");
 
-  const buttons = [
-    { id: "BTN_PING", text: "🏓 Ping" },
-    { id: "BTN_ALIVE", text: "🤖 Alive" }
-  ];
+    // Buttons array
+    const buttons = [
+      { id: "BTN_PING", text: "🏓 Ping" },
+      { id: "BTN_ALIVE", text: "🤖 Alive" }
+    ];
 
-  await sendButtons(danuwa, from, {
-    text: "🎬 Button Test",
-    footer: "test-MD • Button Test",
-    buttons
-  });
+    // Send buttons
+    await sendButtons(danuwa, from, {
+      text: "🎬 Button Test",
+      footer: "test-MD • Button Test",
+      buttons
+    }, { quoted });
+
+    console.log("✅ Button test sent successfully");
+  } catch (err) {
+    console.error("❌ Error sending buttons:", err);
+  }
 });
