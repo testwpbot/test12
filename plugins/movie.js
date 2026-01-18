@@ -163,11 +163,11 @@ cmd({
 
   pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
 
-  // ===== NEW: send buttons instead of plain text =====
+  // ===== FIXED: Proper gifted-btns button payload =====
   const buttons = downloadLinks.map((d, i) => ({
-    id: `MOVIE_${i}`,
+    buttonId: `MOVIE_${i}`,               // ✅ buttonId instead of id
     buttonText: { displayText: `${d.quality} - ${d.size}` },
-    type: 1
+    type: 1                                // quick reply
   }));
 
   await sendButtons(danuwa, from, {
