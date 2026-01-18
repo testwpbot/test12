@@ -1,45 +1,54 @@
 const { cmd } = require("../command");
+const { proto, generateWAMessageFromContent } = require("@whiskeysockets/baileys");
 
 cmd({
-  pattern: "buttontest",
-  alias: ["bt", "buttons"],
+  pattern: "bt",
+  alias: ["buttontest", "buttons"],
   react: "🧪",
-  desc: "Test WhatsApp buttons (interactiveMessage)",
+  desc: "Test WhatsApp buttons (official Baileys)",
   category: "test",
   filename: __filename
-}, async (danuwa, mek, m, { from, reply }) => {
+}, async (danuwa, mek, m, { from }) => {
 
-  await danuwa.sendMessage(from, {
-    interactiveMessage: {
-      header: {
-        title: "🎬 Button Test",
-        subtitle: "Official Baileys"
-      },
-      body: {
-        text: "Click a button below to test 👇"
-      },
-      footer: {
-        text: "test-MD • Button Test"
-      },
-      action: {
-        buttons: [
-          {
-            type: "reply",
-            reply: {
-              id: "BTN_PING",
-              title: "🏓 Ping"
+  const msg = generateWAMessageFromContent(
+    from,
+    proto.Message.fromObject({
+      interactiveMessage: {
+        header: {
+          title: "🎬 Button Test",
+          subtitle: "Official Baileys"
+        },
+        body: {
+          text: "Click a button below 👇"
+        },
+        footer: {
+          text: "test-MD • Button Test"
+        },
+        action: {
+          buttons: [
+            {
+              type: "reply",
+              reply: {
+                id: "BTN_PING",
+                title: "🏓 Ping"
+              }
+            },
+            {
+              type: "reply",
+              reply: {
+                id: "BTN_ALIVE",
+                title: "🤖 Alive"
+              }
             }
-          },
-          {
-            type: "reply",
-            reply: {
-              id: "BTN_ALIVE",
-              title: "🤖 Alive"
-            }
-          }
-        ]
+          ]
+        }
       }
-    }
-  }, { quoted: mek });
+    }),
+    { quoted: mek }
+  );
+
+  await danuwa.relayMessage(from, msg.message, {
+    messageId: msg.key.id
+  });
 
 });
