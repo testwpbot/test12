@@ -18,7 +18,7 @@ const {
   jidDecode,
   fetchLatestBaileysVersion,
   Browsers
-} = require('@whiskeysockets/baileys');
+} = require('@rexxhayanasi/elaina-baileys');
 
 const fs = require('fs');
 const P = require('pino');
