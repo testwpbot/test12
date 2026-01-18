@@ -1,47 +1,31 @@
 const { cmd } = require("../command");
-const { proto, generateWAMessageFromContent } = require("@whiskeysockets/baileys");
 
 cmd({
   pattern: "bt",
-  alias: ["listtest", "buttons"],
+  alias: ["buttontest", "buttons"],
   react: "🧪",
-  desc: "Test WhatsApp list messages (safe in 2026)",
+  desc: "Test WhatsApp buttons (Elaina Baileys)",
   category: "test",
   filename: __filename
-}, async (danuwa, mek, m, { from }) => {
+}, async (danuwa, mek, m, { from, reply }) => {
 
-  const msg = generateWAMessageFromContent(
-    from,
-    proto.Message.fromObject({
-      listMessage: {
-        title: "🎬 List Test",
-        description: "Choose an option below 👇",
-        buttonText: "OPEN MENU",
-        footerText: "test-MD • List Test",
-        sections: [
-          {
-            title: "Test Actions",
-            rows: [
-              {
-                title: "🏓 Ping",
-                description: "Check bot response",
-                rowId: "LIST_PING"
-              },
-              {
-                title: "🤖 Alive",
-                description: "Check bot status",
-                rowId: "LIST_ALIVE"
-              }
-            ]
-          }
-        ]
-      }
-    }),
-    { quoted: mek }
-  );
+  // Button array
+  const buttons = [
+    { buttonId: "BTN_PING", buttonText: { displayText: "🏓 Ping" }, type: 1 },
+    { buttonId: "BTN_ALIVE", buttonText: { displayText: "🤖 Alive" }, type: 1 }
+  ];
 
-  await danuwa.relayMessage(from, msg.message, {
-    messageId: msg.key.id
-  });
+  try {
+    await danuwa.sendMessage(from, {
+      text: "🎬 Button Test\nClick one of the buttons below 👇",
+      footer: "test-MD • Button Test",
+      buttons,
+      headerType: 1
+    }, { quoted: mek });
+
+  } catch (error) {
+    console.error("❌ Failed to send buttons:", error);
+    reply("*❌ Failed to send buttons*");
+  }
 
 });
