@@ -1,4 +1,5 @@
 const { cmd } = require("../command");
+const { proto, generateWAMessageFromContent } = require("@whiskeysockets/baileys");
 
 cmd({
   pattern: "bt",
@@ -9,28 +10,38 @@ cmd({
   filename: __filename
 }, async (danuwa, mek, m, { from }) => {
 
-  await danuwa.sendMessage(from, {
-    text: "🎬 *List Test*\nChoose an option below 👇",
-    footer: "test-MD • List Test",
-    title: "Button Alternative",
-    buttonText: "OPEN MENU",
-    sections: [
-      {
-        title: "Test Actions",
-        rows: [
+  const msg = generateWAMessageFromContent(
+    from,
+    proto.Message.fromObject({
+      listMessage: {
+        title: "🎬 List Test",
+        description: "Choose an option below 👇",
+        buttonText: "OPEN MENU",
+        footerText: "test-MD • List Test",
+        sections: [
           {
-            title: "🏓 Ping",
-            description: "Check bot response",
-            rowId: "LIST_PING"
-          },
-          {
-            title: "🤖 Alive",
-            description: "Check bot status",
-            rowId: "LIST_ALIVE"
+            title: "Test Actions",
+            rows: [
+              {
+                title: "🏓 Ping",
+                description: "Check bot response",
+                rowId: "LIST_PING"
+              },
+              {
+                title: "🤖 Alive",
+                description: "Check bot status",
+                rowId: "LIST_ALIVE"
+              }
+            ]
           }
         ]
       }
-    ]
-  }, { quoted: mek });
+    }),
+    { quoted: mek }
+  );
+
+  await danuwa.relayMessage(from, msg.message, {
+    messageId: msg.key.id
+  });
 
 });
