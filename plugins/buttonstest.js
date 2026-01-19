@@ -23,7 +23,11 @@ cmd(
       // Button payloads MUST be commands
       const buttons = [
         { id: ".menu", text: "🏓 Menu" },
-        { id: ".alive", text: "🤖 Alive" }
+        { id: ".alive", text: "🤖 Alive" },
+                { id: ".menu1", text: "🏓 Menu" },
+                { id: ".menu2", text: "🏓 Menu" },
+                { id: ".menu3", text: "🏓 Menu" },
+                { id: ".menu4", text: "🏓 Menu" },
       ];
 
       // Send buttons
