@@ -166,7 +166,7 @@ cmd({
   reply(msg);
 });
 
-/* ===== MOVIE SELECTION ===== */
+/* ===== MOVIE NUMBER SELECTION ===== */
 
 cmd({
   filter: (t, { sender }) =>
@@ -213,33 +213,60 @@ cmd({
   }, { quoted: mek });
 });
 
-/* ===== BUTTON QUALITY HANDLER ===== */
+/* ===== BUTTON HANDLER (NATIVE_FLOW FIX) ===== */
 
 cmd({
-  filter: (t, { sender }) =>
-    pendingQuality[sender] &&
-    t.startsWith(`MOVIE_Q_${sender}_`)
-}, async (danuwa, mek, m, { body, sender, from, reply }) => {
+  filter: (_, { m }) =>
+    m.message?.interactiveResponseMessage?.nativeFlowResponseMessage
+}, async (danuwa, mek, m, { sender, from, reply }) => {
 
-  const index = Number(body.split("_").pop());
-  const { movie } = pendingQuality[sender];
+  const native =
+    m.message.interactiveResponseMessage.nativeFlowResponseMessage;
+
+  let data;
+  try {
+    data = JSON.parse(native.paramsJson);
+  } catch {
+    return;
+  }
+
+  const buttonId = data.id;
+  if (!buttonId || !buttonId.startsWith(`MOVIE_Q_${sender}_`)) return;
+
+  const index = Number(buttonId.split("_").pop());
+  const pending = pendingQuality[sender];
+  if (!pending) return reply("*❌ Session expired. Search again.*");
+
+  const { movie } = pending;
   delete pendingQuality[sender];
 
-  const sel = movie.downloadLinks[index];
-  reply(`*⬇️ Sending ${sel.quality} movie...*`);
-
-  const direct = getDirectPixeldrainUrl(sel.link);
+  const selected = movie.downloadLinks[index];
+  if (!selected) return reply("*❌ Invalid selection.*");
 
   await danuwa.sendMessage(from, {
-    document: { url: direct },
-    mimetype: "video/mp4",
-    fileName: `${movie.metadata.title} - ${sel.quality}.mp4`
-      .replace(/[^\w\s.-]/gi, ""),
-    caption:
-      `*🎬 ${movie.metadata.title}*\n` +
-      `📊 ${sel.quality}\n` +
-      `💾 ${sel.size}\n\nEnjoy 🍿`
-  }, { quoted: mek });
+    react: { text: "✅", key: m.key }
+  });
+
+  reply(`*⬇️ Sending ${selected.quality} movie…*`);
+
+  try {
+    const direct = getDirectPixeldrainUrl(selected.link);
+
+    await danuwa.sendMessage(from, {
+      document: { url: direct },
+      mimetype: "video/mp4",
+      fileName: `${movie.metadata.title} - ${selected.quality}.mp4`
+        .replace(/[^\w\s.-]/gi, ""),
+      caption:
+        `*🎬 ${movie.metadata.title}*\n` +
+        `📊 Quality: ${selected.quality}\n` +
+        `💾 Size: ${selected.size}\n\nEnjoy 🍿`
+    }, { quoted: mek });
+
+  } catch (err) {
+    console.error("Movie send error:", err);
+    reply("*❌ Failed to send movie.*");
+  }
 });
 
 /* ================= CLEANUP ================= */
