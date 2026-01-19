@@ -226,7 +226,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
 }
 
 
-const m = sms(conn, mek)
+const m = sms(test, mek)
 const type = getContentType(mek.message)
 const content = JSON.stringify(mek.message)
 const from = mek.key.remoteJid
