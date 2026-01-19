@@ -149,28 +149,31 @@ cmd({
   }
   const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
   if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
-  pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
   
-  // TRICK: Set button text to NUMBERS but show quality in description
-  // Actually, we need a different approach...
+  // Store with button text to number mapping
+  pendingQuality[sender] = { 
+    movie: { metadata, downloadLinks }, 
+    timestamp: Date.now(),
+    buttonMap: {} // Will store "1. 720p - 1.78 GB" → 1
+  };
   
-  // Let's use a DIFFERENT trick: We'll map button text to numbers
-  // Store mapping of what button text corresponds to what number
-  pendingQuality[sender].buttonMap = {};
-  downloadLinks.forEach((d, i) => {
-    const buttonText = `${d.quality} - ${d.size}`;
-    pendingQuality[sender].buttonMap[buttonText] = i + 1; // Map "480p - 940 MB" → 2
-  });
-  
-  // Create buttons (they will send back the text)
+  // Create buttons with NUMBER PREFIX
   const buttons = [];
+  
   downloadLinks.forEach((d, i) => {
+    const buttonNumber = i + 1;
+    const buttonText = `${buttonNumber}. ${d.quality} - ${d.size}`; // "1. 720p - 1.78 GB"
+    
+    // Store mapping
+    pendingQuality[sender].buttonMap[buttonText] = buttonNumber;
+    
     buttons.push({
-      id: (i + 1).toString(), // ID doesn't matter much
-      text: `${d.quality} - ${d.size}` // This is what gets sent back
+      id: buttonNumber.toString(),
+      text: buttonText
     });
   });
   
+  // Add cancel button
   buttons.push({
     id: "cancel",
     text: "❌ Cancel"
@@ -178,21 +181,10 @@ cmd({
   
   try {
     await sendButtons(danuwa, from, {
-      text: `*📥 Available Qualities (Max 2GB)*\n*🎬 Movie:* ${metadata.title.substring(0, 50)}${metadata.title.length > 50 ? '...' : ''}\n\n*Button shows quality, but reply with NUMBER:*`,
-      footer: "Click button for quality, then reply with its number (1, 2, etc.)",
+      text: `*📥 Available Qualities (Max 2GB)*\n*🎬 Movie:* ${metadata.title.substring(0, 50)}${metadata.title.length > 50 ? '...' : ''}`,
+      footer: "Click a button to select quality | Sinhalasub.lk",
       buttons
     }, { quoted: mek });
-    
-    // Also send a text reminder
-    setTimeout(async () => {
-      let numberMsg = "*📋 Quick Reference:*\n";
-      downloadLinks.forEach((d, i) => {
-        numberMsg += `*${i+1}.* = ${d.quality} - ${d.size}\n`;
-      });
-      numberMsg += `\n*After clicking a button, reply with its number (1, 2, etc.)*`;
-      await danuwa.sendMessage(from, { text: numberMsg }, { quoted: mek });
-    }, 1000);
-    
   } catch (error) {
     console.error("Error sending buttons:", error);
     // Fallback to text
@@ -203,23 +195,35 @@ cmd({
   }
 });
 
-// Modified handler to accept BOTH numbers AND button text
+// Enhanced filter to extract numbers from button text
 cmd({
   filter: (text, { sender }) => {
     if (!pendingQuality[sender]) return false;
     
-    // Check if it's a number (1, 2, 3...)
-    const num = parseInt(text);
-    if (!isNaN(num) && num > 0 && num <= pendingQuality[sender].movie.downloadLinks.length) {
+    const session = pendingQuality[sender];
+    
+    // 1. Check if it's a plain number (1, 2, 3...)
+    const plainNum = parseInt(text);
+    if (!isNaN(plainNum) && plainNum > 0 && plainNum <= session.movie.downloadLinks.length) {
       return true;
     }
     
-    // Check if it's button text (like "480p - 940 MB")
-    if (pendingQuality[sender].buttonMap && pendingQuality[sender].buttonMap[text]) {
+    // 2. Check if it's button text with number prefix (like "1. 720p - 1.78 GB")
+    // Extract number from beginning of text
+    const match = text.match(/^(\d+)\./);
+    if (match) {
+      const extractedNum = parseInt(match[1]);
+      if (!isNaN(extractedNum) && extractedNum > 0 && extractedNum <= session.movie.downloadLinks.length) {
+        return true;
+      }
+    }
+    
+    // 3. Check if text matches any button text exactly (for backward compatibility)
+    if (session.buttonMap && session.buttonMap[text]) {
       return true;
     }
     
-    // Check for cancel
+    // 4. Check for cancel
     if (text === "cancel" || text === "❌ Cancel") {
       return true;
     }
@@ -227,9 +231,15 @@ cmd({
     return false;
   }
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  console.log("Quality selection received:", { sender, body });
+  console.log("🎬 Quality selection received:", { sender, body });
   
   await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
+  
+  const session = pendingQuality[sender];
+  if (!session) {
+    reply("*❌ Session expired. Please start over.*");
+    return;
+  }
   
   // Handle cancel
   if (body === "cancel" || body === "❌ Cancel") {
@@ -238,45 +248,93 @@ cmd({
     return;
   }
   
-  let index;
-  const session = pendingQuality[sender];
+  let selectedNumber = null;
   
-  // Check if body is a number
-  const num = parseInt(body);
-  if (!isNaN(num)) {
-    index = num - 1;
-  } 
-  // Check if body is button text (mapped to number)
+  // Method 1: Try to extract number from button text (e.g., "1. 720p - 1.78 GB")
+  const match = body.match(/^(\d+)\./);
+  if (match) {
+    selectedNumber = parseInt(match[1]);
+    console.log("🎬 Extracted number from button text:", { body, extractedNumber: selectedNumber });
+  }
+  // Method 2: Check if it's a plain number
+  else if (!isNaN(parseInt(body))) {
+    selectedNumber = parseInt(body);
+    console.log("🎬 Plain number received:", selectedNumber);
+  }
+  // Method 3: Check button map (exact match)
   else if (session.buttonMap && session.buttonMap[body]) {
-    index = session.buttonMap[body] - 1;
-    console.log("Button text mapped to number:", { buttonText: body, number: session.buttonMap[body], index });
-  } else {
-    reply("*❌ Invalid selection. Please reply with a number (1, 2, etc.)*");
+    selectedNumber = session.buttonMap[body];
+    console.log("🎬 Button map match:", { body, number: selectedNumber });
+  }
+  
+  if (!selectedNumber || selectedNumber < 1 || selectedNumber > session.movie.downloadLinks.length) {
+    reply(`*❌ Invalid selection. Please choose a number between 1-${session.movie.downloadLinks.length}*`);
     return;
   }
   
+  const index = selectedNumber - 1;
   const { movie } = session;
   delete pendingQuality[sender];
   
-  if (index < 0 || index >= movie.downloadLinks.length) {
-    reply("*❌ Invalid selection*");
-    return;
-  }
-  
   const selectedLink = movie.downloadLinks[index];
+  
+  // Debug log
+  console.log("🎬 Processing download:", {
+    quality: selectedLink.quality,
+    size: selectedLink.size,
+    link: selectedLink.link,
+    movie: movie.metadata.title
+  });
+  
   reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
+  
   try {
     const directUrl = getDirectPixeldrainUrl(selectedLink.link);
+    if (!directUrl) {
+      throw new Error("Could not generate direct download URL");
+    }
+    
+    // Sanitize filename
+    const fileName = `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`
+      .replace(/[<>:"/\\|?*]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
     await danuwa.sendMessage(from, {
       document: { url: directUrl },
       mimetype: "video/mp4",
-      fileName: `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`.replace(/[^\w\s.-]/gi,''),
+      fileName: fileName,
       caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* ${selectedLink.size}\n\n*Enjoy your movie! 🍿*`
     }, { quoted: mek });
+    
   } catch (error) {
-    console.error("Send document error:", error);
+    console.error("🎬 Send document error:", error);
     reply(`*❌ Failed to send movie:* ${error.message || "Unknown error"}`);
   }
+});
+
+// Add a debug command to see what's happening
+cmd({
+  pattern: "moviedebug",
+  desc: "Debug movie plugin state",
+  category: "debug"
+}, async (danuwa, mek, m, { sender, reply }) => {
+  let debugMsg = "*🎬 Movie Plugin Debug Info*\n\n";
+  
+  if (pendingSearch[sender]) {
+    debugMsg += `*Pending Search:* Yes\n`;
+    debugMsg += `*Results:* ${pendingSearch[sender].results.length}\n`;
+  }
+  
+  if (pendingQuality[sender]) {
+    const session = pendingQuality[sender];
+    debugMsg += `\n*Pending Quality:* Yes\n`;
+    debugMsg += `*Movie:* ${session.movie.metadata.title}\n`;
+    debugMsg += `*Qualities:* ${session.movie.downloadLinks.length}\n`;
+    debugMsg += `*Button Map:* ${JSON.stringify(session.buttonMap || {})}\n`;
+  }
+  
+  await reply(debugMsg);
 });
 
 setInterval(() => {
