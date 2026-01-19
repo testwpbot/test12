@@ -226,41 +226,42 @@ if (mek.key?.remoteJid === 'status@broadcast') {
 }
 
 
-    const m = sms(test, mek);
-const type = getContentType(mek.message);
-const from = mek.key.remoteJid;
-
-// Get message body/text from ALL possible message types
-let body = '';
-if (type === 'conversation') {
-    body = mek.message.conversation || '';
-} else if (type === 'extendedTextMessage') {
-    body = mek.message.extendedTextMessage?.text || '';
-} else if (type === 'buttonsResponseMessage') {
-    // THIS IS CRITICAL FOR BUTTONS!
-    body = mek.message.buttonsResponseMessage?.selectedButtonId || 
-           mek.message.buttonsResponseMessage?.selectedDisplayText || '';
-} else if (type === 'interactiveResponseMessage') {
-    // For interactive messages
-    const interactive = mek.message.interactiveResponseMessage;
-    if (interactive?.nativeFlowResponseMessage) {
-        body = interactive.nativeFlowResponseMessage?.paramsJson || 
-               interactive.nativeFlowResponseMessage?.name || '';
-    }
-} else if (mek.message[type]) {
-    body = mek.message[type]?.text || mek.message[type]?.caption || '';
-}
-
-// Debug: Log button clicks
-if (type === 'buttonsResponseMessage' || type === 'interactiveResponseMessage') {
-    console.log('🎬 BUTTON CLICK DETECTED:', {
-        type,
-        body,
-        sender: mek.key.remoteJid,
-        selectedButtonId: mek.message.buttonsResponseMessage?.selectedButtonId,
-        selectedDisplayText: mek.message.buttonsResponseMessage?.selectedDisplayText
-    });
-}
+const m = sms(conn, mek)
+const type = getContentType(mek.message)
+const content = JSON.stringify(mek.message)
+const from = mek.key.remoteJid
+const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo != null ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] : []
+const body = 
+  (type === 'conversation') ? mek.message.conversation :
+  (type === 'extendedTextMessage' && mek.message.extendedTextMessage?.contextInfo?.quotedMessage &&
+   await isbtnID(mek.message.extendedTextMessage.contextInfo.stanzaId)) ?
+    await getCmdForCmdId(
+      await getCMDStore(mek.message.extendedTextMessage.contextInfo.stanzaId),
+      mek.message.extendedTextMessage.text
+    ) :
+  (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
+  (type === 'templateButtonReplyMessage') ? mek.message.templateButtonReplyMessage?.selectedId :
+  (type === 'interactiveResponseMessage') ? (() => {
+    try {
+      const json = JSON.parse(mek.message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson);
+      return json?.id || '';
+    } catch { return ''; }
+  })() :
+  (type === 'imageMessage' && mek.message.imageMessage?.caption) ? mek.message.imageMessage.caption :
+  (type === 'videoMessage' && mek.message.videoMessage?.caption) ? mek.message.videoMessage.caption :
+  // fallback for unknown or malformed types
+  m.msg?.text ||
+  m.msg?.conversation ||
+  m.msg?.caption ||
+  m.message?.conversation ||
+  m.msg?.selectedButtonId ||
+  m.msg?.singleSelectReply?.selectedRowId ||
+  m.msg?.selectedId ||
+  m.msg?.contentText ||
+  m.msg?.selectedDisplayText ||
+  m.msg?.title ||
+  m.msg?.name ||
+  '';
     const isCmd = body.startsWith(prefix);
     const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
     const args = body.trim().split(/ +/).slice(1);
