@@ -38,7 +38,8 @@
     "sadaslk-dlcore": "^1.0.0",
     "abir-photo360-apis": "^1.0.2",
     "puppeteer" : "^24.35.0",
-    "gifted-btns" : "^1.0.0"
+    "gifted-btns" : "^1.0.0",
+    "jimp" : "^1.6.0"
     
 
 
