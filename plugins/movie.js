@@ -1,5 +1,4 @@
 const { cmd } = require("../command");
-const { sendButtons } = require("gifted-btns");
 const puppeteer = require("puppeteer");
 
 const pendingSearch = {};
@@ -99,7 +98,12 @@ async function getPixeldrainLinks(movieUrl) {
         if (sizeText.includes("GB")) sizeMB = parseFloat(sizeText) * 1024;
         else if (sizeText.includes("MB")) sizeMB = parseFloat(sizeText);
         if (sizeMB <= 2048) {
-          directLinks.push({ link: finalUrl, quality: normalizeQuality(l.quality), size: l.size });
+          directLinks.push({ 
+            link: finalUrl, 
+            quality: normalizeQuality(l.quality), 
+            size: l.size,
+            buttonText: `${normalizeQuality(l.quality)} - ${l.size}` // Store button text format
+          });
         }
       }
       await subPage.close();
@@ -150,89 +154,74 @@ cmd({
   const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
   if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
   
-  // Store with button text to number mapping
+  // Store with button text mapping
   pendingQuality[sender] = { 
     movie: { metadata, downloadLinks }, 
     timestamp: Date.now(),
-    buttonMap: {} // Will store "1. 720p - 1.78 GB" → 1
+    // Create a map of all possible button texts to their index
+    buttonTextMap: {}
   };
   
-  // Create buttons with NUMBER PREFIX
-  const buttons = [];
-  
+  // Build button text map for matching
   downloadLinks.forEach((d, i) => {
-    const buttonNumber = i + 1;
-    const buttonText = `${buttonNumber}. ${d.quality} - ${d.size}`; // "1. 720p - 1.78 GB"
+    const buttonText = d.buttonText || `${d.quality} - ${d.size}`;
+    // Store multiple variations for flexible matching
+    pendingQuality[sender].buttonTextMap[buttonText.toLowerCase()] = i; // "720p - 1.78 gb" → 0
+    pendingQuality[sender].buttonTextMap[buttonText.toUpperCase()] = i; // "720P - 1.78 GB" → 0
+    pendingQuality[sender].buttonTextMap[buttonText] = i; // "720p - 1.78 GB" → 0
     
-    // Store mapping
-    pendingQuality[sender].buttonMap[buttonText] = buttonNumber;
-    
-    buttons.push({
-      id: buttonNumber.toString(),
-      text: buttonText
-    });
+    // Also store without spaces for safety
+    const noSpaceText = buttonText.replace(/\s+/g, '');
+    pendingQuality[sender].buttonTextMap[noSpaceText.toLowerCase()] = i;
   });
   
-  // Add cancel button
-  buttons.push({
-    id: "cancel",
-    text: "❌ Cancel"
+  let qualityMsg = "*📥 Available Qualities (Max 2GB):*\n";
+  downloadLinks.forEach((d, i) => {
+    const buttonText = d.buttonText || `${d.quality} - ${d.size}`;
+    qualityMsg += `*${i+1}.* ${buttonText}\n`;
   });
-  
-  try {
-    await sendButtons(danuwa, from, {
-      text: `*📥 Available Qualities (Max 2GB)*\n*🎬 Movie:* ${metadata.title.substring(0, 50)}${metadata.title.length > 50 ? '...' : ''}`,
-      footer: "Click a button to select quality | Sinhalasub.lk",
-      buttons
-    }, { quoted: mek });
-  } catch (error) {
-    console.error("Error sending buttons:", error);
-    // Fallback to text
-    let qualityMsg = "*📥 Available Qualities (Max 2GB):*\n";
-    downloadLinks.forEach((d,i) => qualityMsg += `*${i+1}.* ${d.quality} - ${d.size}\n`);
-    qualityMsg += `\n*Reply with quality number to receive the movie as a document.*`;
-    await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: mek });
-  }
+  qualityMsg += `\n*Reply with quality text (e.g., "720p - 1.78 GB") to receive the movie.*`;
+  await danuwa.sendMessage(from, { text: qualityMsg }, { quoted: mek });
 });
 
-// Enhanced filter to extract numbers from button text
+// CHANGED: This filter now accepts button text instead of numbers
 cmd({
   filter: (text, { sender }) => {
     if (!pendingQuality[sender]) return false;
     
     const session = pendingQuality[sender];
+    const normalizedText = text.trim().toLowerCase();
     
-    // 1. Check if it's a plain number (1, 2, 3...)
-    const plainNum = parseInt(text);
-    if (!isNaN(plainNum) && plainNum > 0 && plainNum <= session.movie.downloadLinks.length) {
+    // Check if text matches any button text
+    if (session.buttonTextMap && session.buttonTextMap[normalizedText] !== undefined) {
       return true;
     }
     
-    // 2. Check if it's button text with number prefix (like "1. 720p - 1.78 GB")
-    // Extract number from beginning of text
-    const match = text.match(/^(\d+)\./);
-    if (match) {
-      const extractedNum = parseInt(match[1]);
-      if (!isNaN(extractedNum) && extractedNum > 0 && extractedNum <= session.movie.downloadLinks.length) {
-        return true;
-      }
-    }
-    
-    // 3. Check if text matches any button text exactly (for backward compatibility)
-    if (session.buttonMap && session.buttonMap[text]) {
+    // Also check original text (case sensitive)
+    if (session.buttonTextMap && session.buttonTextMap[text] !== undefined) {
       return true;
     }
     
-    // 4. Check for cancel
-    if (text === "cancel" || text === "❌ Cancel") {
+    // Check without spaces
+    const noSpaceText = text.replace(/\s+/g, '').toLowerCase();
+    if (session.buttonTextMap && session.buttonTextMap[noSpaceText] !== undefined) {
+      return true;
+    }
+    
+    // BACKWARD COMPATIBILITY: Also accept numbers (1, 2, 3...)
+    const num = parseInt(text);
+    if (!isNaN(num) && num > 0 && num <= session.movie.downloadLinks.length) {
+      return true;
+    }
+    
+    // Check for cancel
+    if (text.toLowerCase() === "cancel" || text === "❌ Cancel") {
       return true;
     }
     
     return false;
   }
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
-  console.log("🎬 Quality selection received:", { sender, body });
-  
   await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
   
   const session = pendingQuality[sender];
@@ -242,99 +231,114 @@ cmd({
   }
   
   // Handle cancel
-  if (body === "cancel" || body === "❌ Cancel") {
+  if (body.toLowerCase() === "cancel" || body === "❌ Cancel") {
     delete pendingQuality[sender];
     reply("*❌ Download cancelled*");
     return;
   }
   
-  let selectedNumber = null;
+  let index = -1;
   
-  // Method 1: Try to extract number from button text (e.g., "1. 720p - 1.78 GB")
-  const match = body.match(/^(\d+)\./);
-  if (match) {
-    selectedNumber = parseInt(match[1]);
-    console.log("🎬 Extracted number from button text:", { body, extractedNumber: selectedNumber });
+  // Try to match by button text first
+  const normalizedText = body.trim().toLowerCase();
+  
+  // Method 1: Exact match (case insensitive)
+  if (session.buttonTextMap && session.buttonTextMap[normalizedText] !== undefined) {
+    index = session.buttonTextMap[normalizedText];
+    console.log("🎬 Button text matched (case insensitive):", { body, index });
   }
-  // Method 2: Check if it's a plain number
-  else if (!isNaN(parseInt(body))) {
-    selectedNumber = parseInt(body);
-    console.log("🎬 Plain number received:", selectedNumber);
+  // Method 2: Exact match (case sensitive)
+  else if (session.buttonTextMap && session.buttonTextMap[body] !== undefined) {
+    index = session.buttonTextMap[body];
+    console.log("🎬 Button text matched (case sensitive):", { body, index });
   }
-  // Method 3: Check button map (exact match)
-  else if (session.buttonMap && session.buttonMap[body]) {
-    selectedNumber = session.buttonMap[body];
-    console.log("🎬 Button map match:", { body, number: selectedNumber });
+  // Method 3: Match without spaces
+  else {
+    const noSpaceText = body.replace(/\s+/g, '').toLowerCase();
+    if (session.buttonTextMap && session.buttonTextMap[noSpaceText] !== undefined) {
+      index = session.buttonTextMap[noSpaceText];
+      console.log("🎬 Button text matched (no spaces):", { body, index });
+    }
   }
   
-  if (!selectedNumber || selectedNumber < 1 || selectedNumber > session.movie.downloadLinks.length) {
-    reply(`*❌ Invalid selection. Please choose a number between 1-${session.movie.downloadLinks.length}*`);
+  // Method 4: BACKWARD COMPATIBILITY - Number match
+  if (index === -1) {
+    const num = parseInt(body);
+    if (!isNaN(num) && num > 0 && num <= session.movie.downloadLinks.length) {
+      index = num - 1;
+      console.log("🎬 Number matched:", { body, index });
+    }
+  }
+  
+  if (index === -1) {
+    // Try partial matching as last resort
+    for (let i = 0; i < session.movie.downloadLinks.length; i++) {
+      const link = session.movie.downloadLinks[i];
+      const buttonText = link.buttonText || `${link.quality} - ${link.size}`;
+      
+      // Check if body contains quality or size
+      if (body.toLowerCase().includes(link.quality.toLowerCase()) || 
+          body.toLowerCase().includes(link.size.toLowerCase())) {
+        index = i;
+        console.log("🎬 Partial match found:", { body, quality: link.quality, index });
+        break;
+      }
+    }
+  }
+  
+  if (index === -1 || index < 0 || index >= session.movie.downloadLinks.length) {
+    let errorMsg = "*❌ Invalid selection.*\n\n";
+    errorMsg += "*Please reply with one of these:*\n";
+    session.movie.downloadLinks.forEach((d, i) => {
+      const buttonText = d.buttonText || `${d.quality} - ${d.size}`;
+      errorMsg += `• "${buttonText}"\n`;
+    });
+    errorMsg += `\n*Or type "cancel" to cancel.*`;
+    reply(errorMsg);
     return;
   }
   
-  const index = selectedNumber - 1;
   const { movie } = session;
   delete pendingQuality[sender];
-  
   const selectedLink = movie.downloadLinks[index];
-  
-  // Debug log
-  console.log("🎬 Processing download:", {
-    quality: selectedLink.quality,
-    size: selectedLink.size,
-    link: selectedLink.link,
-    movie: movie.metadata.title
-  });
   
   reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
   
   try {
     const directUrl = getDirectPixeldrainUrl(selectedLink.link);
-    if (!directUrl) {
-      throw new Error("Could not generate direct download URL");
-    }
-    
-    // Sanitize filename
-    const fileName = `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`
-      .replace(/[<>:"/\\|?*]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    
     await danuwa.sendMessage(from, {
       document: { url: directUrl },
       mimetype: "video/mp4",
-      fileName: fileName,
+      fileName: `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`.replace(/[^\w\s.-]/gi,''),
       caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* ${selectedLink.size}\n\n*Enjoy your movie! 🍿*`
     }, { quoted: mek });
-    
   } catch (error) {
-    console.error("🎬 Send document error:", error);
+    console.error("Send document error:", error);
     reply(`*❌ Failed to send movie:* ${error.message || "Unknown error"}`);
   }
 });
 
-// Add a debug command to see what's happening
+// Add a helper command to show accepted formats
 cmd({
-  pattern: "moviedebug",
-  desc: "Debug movie plugin state",
-  category: "debug"
+  pattern: "moviehelp",
+  desc: "Show movie plugin help",
+  category: "download"
 }, async (danuwa, mek, m, { sender, reply }) => {
-  let debugMsg = "*🎬 Movie Plugin Debug Info*\n\n";
+  let helpMsg = "*🎬 Movie Download Plugin Help*\n\n";
+  helpMsg += "*Usage:*\n";
+  helpMsg += "`.movie <movie_name>` - Search for movies\n";
+  helpMsg += "`.moviehelp` - Show this help\n\n";
+  helpMsg += "*Quality Selection:*\n";
+  helpMsg += "After selecting a movie, you'll see quality options.\n";
+  helpMsg += "Reply with the QUALITY TEXT (e.g., \"720p - 1.78 GB\")\n";
+  helpMsg += "OR reply with the NUMBER (1, 2, 3...)\n\n";
+  helpMsg += "*Examples:*\n";
+  helpMsg += "• \"720p - 1.78 GB\"\n";
+  helpMsg += "• \"480p - 940 MB\"\n";
+  helpMsg += "• \"2\" (for second option)\n";
+  helpMsg += "• \"cancel\" (to cancel)\n";
   
-  if (pendingSearch[sender]) {
-    debugMsg += `*Pending Search:* Yes\n`;
-    debugMsg += `*Results:* ${pendingSearch[sender].results.length}\n`;
-  }
-  
-  if (pendingQuality[sender]) {
-    const session = pendingQuality[sender];
-    debugMsg += `\n*Pending Quality:* Yes\n`;
-    debugMsg += `*Movie:* ${session.movie.metadata.title}\n`;
-    debugMsg += `*Qualities:* ${session.movie.downloadLinks.length}\n`;
-    debugMsg += `*Button Map:* ${JSON.stringify(session.buttonMap || {})}\n`;
-  }
-  
-  await reply(debugMsg);
+  await reply(helpMsg);
 });
 
 setInterval(() => {
