@@ -1,312 +1,209 @@
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  jidNormalizedUser,
-  getContentType,
-  proto,
-  generateWAMessageContent,
-  generateWAMessage,
-  AnyMessageContent,
-  prepareWAMessageMedia,
-  areJidsSameUser,
-  downloadContentFromMessage,
-  MessageRetryMap,
-  generateForwardMessageContent,
-  generateWAMessageFromContent,
-  generateMessageID, makeInMemoryStore,
-  jidDecode,
-  fetchLatestBaileysVersion,
-  Browsers
-} = require('@whiskeysockets/baileys');
+const { cmd } = require("../command");
+const puppeteer = require("puppeteer");
+const { sendButtons } = require("gifted-btns");
 
-const fs = require('fs');
-const P = require('pino');
-const express = require('express');
-const axios = require('axios');
-const path = require('path');
-const qrcode = require('qrcode-terminal');
+const pendingSearch = {};
+const pendingQuality = {};
 
-const config = require('./config');
-const { sms, downloadMediaMessage } = require('./lib/msg');
-const {
-  getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson
-} = require('./lib/functions');
-const { File } = require('megajs');
-const { commands, replyHandlers } = require('./command');
+/* ================= HELPERS ================= */
 
-const app = express();
-const port = process.env.PORT || 8000;
-
-const prefix = '.';
-const ownerNumber = ['94776121326'];
-const credsPath = path.join(__dirname, '/auth_info_baileys/creds.json');
-
-async function ensureSessionFile() {
-  if (!fs.existsSync(credsPath)) {
-    if (!config.SESSION_ID) {
-      console.error('❌ SESSION_ID env variable is missing. Cannot restore session.');
-      process.exit(1);
-    }
-
-    console.log("🔄 creds.json not found. Downloading session from MEGA...");
-
-    const sessdata = config.SESSION_ID;
-    const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
-
-    filer.download((err, data) => {
-      if (err) {
-        console.error("❌ Failed to download session file from MEGA:", err);
-        process.exit(1);
-      }
-
-      fs.mkdirSync(path.join(__dirname, '/auth_info_baileys/'), { recursive: true });
-      fs.writeFileSync(credsPath, data);
-      console.log("✅ Session downloaded and saved. Restarting bot...");
-      setTimeout(() => {
-        connectToWA();
-      }, 2000);
-    });
-  } else {
-    setTimeout(() => {
-      connectToWA();
-    }, 1000);
-  }
+function normalizeQuality(text) {
+  if (!text) return null;
+  text = text.toUpperCase();
+  if (/1080|FHD/.test(text)) return "1080p";
+  if (/720|HD/.test(text)) return "720p";
+  if (/480|SD/.test(text)) return "480p";
+  return text;
 }
 
-
-const antiDeletePlugin = require('./plugins/antidelete.js');
-global.pluginHooks = global.pluginHooks || [];
-global.pluginHooks.push(antiDeletePlugin);
-
-
-async function connectToWA() {
-  console.log("Connecting test-MD 🧬...");
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, '/auth_info_baileys/'));
-  const { version } = await fetchLatestBaileysVersion();
-
-  const test = makeWASocket({
-    logger: P({ level: 'silent' }),
-    printQRInTerminal: false,
-    browser: Browsers.macOS("Firefox"),
-    auth: state,
-    version,
-    syncFullHistory: true,
-    markOnlineOnConnect: true,
-    generateHighQualityLinkPreview: true,
-  });
-
-  test.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-        connectToWA();
-      }
-    } else if (connection === 'open') {
-      console.log('✅ test-MD connected to WhatsApp');
-
-      const up = `test-MD connected ✅\n\nPREFIX: ${prefix}`;
-      await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-        image: { url: `https://github.com/testwpbot/test12/blob/main/images/Danuwa%20-%20MD.png?raw=true` },
-        caption: up
-      });
-
-      fs.readdirSync("./plugins/").forEach((plugin) => {
-        if (path.extname(plugin).toLowerCase() === ".js") {
-          require(`./plugins/${plugin}`);
-        }
-      });
-    }
-  });
-
-  test.ev.on('creds.update', saveCreds);
-
-  test.ev.on('messages.upsert', async ({ messages }) => {
-    for (const msg of messages) {
-      if (msg.messageStubType === 68) {
-        await test.sendMessageAck(msg.key);
-      }
-    }
-
-    const mek = messages[0];
-    if (!mek || !mek.message) return;
-    mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
-   
-
-        if (global.pluginHooks) {
-      for (const plugin of global.pluginHooks) {
-        if (plugin.onMessage) {
-          try {
-            await plugin.onMessage(test, mek);
-          } catch (e) {
-            console.log("onMessage error:", e);
-          }
-        }
-      }
-    }
- 
-    
-    
-if (mek.key?.remoteJid === 'status@broadcast') {
-  const senderJid = mek.key.participant || mek.key.remoteJid || "unknown@s.whatsapp.net";
-  const mentionJid = senderJid.includes("@s.whatsapp.net") ? senderJid : senderJid + "@s.whatsapp.net";
-
-  if (config.AUTO_STATUS_SEEN === "true") {
-    try {
-      await test.readMessages([mek.key]);
-      console.log(`[✓] Status seen: ${mek.key.id}`);
-    } catch (e) {
-      console.error("❌ Failed to mark status as seen:", e);
-    }
-  }
-
-  if (config.AUTO_STATUS_REACT === "true" && mek.key.participant) {
-    try {
-      const emojis = ['❤️', '💸', '😇', '🍂', '💥', '💯', '🔥', '💫', '💎', '💗', '🤍', '🖤', '👀', '🙌', '🙆', '🚩', '🥰', '💐', '😎', '🤎', '✅', '🫀', '🧡', '😁', '😄', '🌸', '🕊️', '🌷', '⛅', '🌟', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
-      const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-
-      await test.sendMessage(mek.key.participant, {
-        react: {
-          text: randomEmoji,
-          key: mek.key,
-        }
-      });
-
-      console.log(`[✓] Reacted to status of ${mek.key.participant} with ${randomEmoji}`);
-    } catch (e) {
-      console.error("❌ Failed to react to status:", e);
-    }
-  }
-
-  if (mek.message?.extendedTextMessage && !mek.message.imageMessage && !mek.message.videoMessage) {
-    const text = mek.message.extendedTextMessage.text || "";
-    if (text.trim().length > 0) {
-      try {
-        await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-          text: `📝 *Text Status*\n👤 From: @${mentionJid.split("@")[0]}\n\n${text}`,
-          mentions: [mentionJid]
-        });
-        console.log(`✅ Text-only status from ${mentionJid} forwarded.`);
-      } catch (e) {
-        console.error("❌ Failed to forward text status:", e);
-      }
-    }
-  }
-
-  if (mek.message?.imageMessage || mek.message?.videoMessage) {
-    try {
-      const msgType = mek.message.imageMessage ? "imageMessage" : "videoMessage";
-      const mediaMsg = mek.message[msgType];
-
-      const stream = await downloadContentFromMessage(
-        mediaMsg,
-        msgType === "imageMessage" ? "image" : "video"
-      );
-
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
-      }
-
-      const mimetype = mediaMsg.mimetype || (msgType === "imageMessage" ? "image/jpeg" : "video/mp4");
-      const captionText = mediaMsg.caption || "";
-
-      await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-        [msgType === "imageMessage" ? "image" : "video"]: buffer,
-        mimetype,
-        caption: `📥 *Forwarded Status*\n👤 From: @${mentionJid.split("@")[0]}\n\n${captionText}`,
-        mentions: [mentionJid]
-      });
-
-      console.log(`✅ Media status from ${mentionJid} forwarded.`);
-    } catch (err) {
-      console.error("❌ Failed to download or forward media status:", err);
-    }
-  }
+function getDirectPixeldrainUrl(url) {
+  const m = url.match(/pixeldrain\.com\/u\/(\w+)/);
+  return m ? `https://pixeldrain.com/api/file/${m[1]}?download` : null;
 }
 
+/* ================= SCRAPERS ================= */
 
-    const m = sms(test, mek);
-    const type = getContentType(mek.message);
-    const from = mek.key.remoteJid;
-    const body = type === 'conversation' ? mek.message.conversation : mek.message[type]?.text || mek.message[type]?.caption || '';
-    const isCmd = body.startsWith(prefix);
-    const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
-    const args = body.trim().split(/ +/).slice(1);
-    const q = args.join(' ');
+async function searchMovies(query) {
+  const url = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}&post_type=movies`;
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  const page = await browser.newPage();
 
-    const sender = mek.key.fromMe ? test.user.id : (mek.key.participant || mek.key.remoteJid);
-    const senderNumber = sender.split('@')[0];
-    const isGroup = from.endsWith('@g.us');
-    const botNumber = test.user.id.split(':')[0];
-    const pushname = mek.pushName || 'Sin Nombre';
-    const isMe = botNumber.includes(senderNumber);
-    const isOwner = ownerNumber.includes(senderNumber) || isMe;
-    const botNumber2 = await jidNormalizedUser(test.user.id);
+  await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
 
-    const groupMetadata = isGroup ? await test.groupMetadata(from).catch(() => {}) : '';
-    const groupName = isGroup ? groupMetadata.subject : '';
-    const participants = isGroup ? groupMetadata.participants : '';
-    const groupAdmins = isGroup ? await getGroupAdmins(participants) : '';
-    const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false;
-    const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
+  const results = await page.$$eval(".display-item .item-box", boxes =>
+    boxes.slice(0, 10).map((box, i) => {
+      const a = box.querySelector("a");
+      return {
+        id: i + 1,
+        title: a?.title?.trim(),
+        movieUrl: a?.href
+      };
+    }).filter(Boolean)
+  );
 
-    const reply = (text) => test.sendMessage(from, { text }, { quoted: mek });
+  await browser.close();
+  return results;
+}
 
-    if (isCmd) {
-      const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
-      if (cmd) {
-        if (cmd.react) test.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
-        try {
-          cmd.function(test, mek, m, {
-            from, quoted: mek, body, isCmd, command: commandName, args, q,
-            isGroup, sender, senderNumber, botNumber2, botNumber, pushname,
-            isMe, isOwner, groupMetadata, groupName, participants, groupAdmins,
-            isBotAdmins, isAdmins, reply,
+async function getMovieMetadata(url) {
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  const page = await browser.newPage();
+
+  await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+
+  const data = await page.evaluate(() => {
+    const txt = s => document.querySelector(s)?.textContent.trim() || "";
+    return {
+      title: txt(".details-title h3"),
+      language: txt(".info-col strong:contains('Language')") || "English",
+      duration: txt("[itemprop='duration']"),
+      imdb: txt(".data-imdb").replace("IMDb:", "").trim(),
+      genres: [...document.querySelectorAll(".details-genre a")].map(a => a.textContent),
+      thumbnail: document.querySelector(".splash-bg img")?.src || ""
+    };
+  });
+
+  await browser.close();
+  return data;
+}
+
+async function getPixeldrainLinks(movieUrl) {
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  const page = await browser.newPage();
+  await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
+
+  const rows = await page.$$eval(".link-pixeldrain tbody tr", trs =>
+    trs.map(tr => ({
+      pageLink: tr.querySelector(".link-opt a")?.href,
+      quality: tr.querySelector(".quality")?.textContent,
+      size: tr.querySelector("td:nth-child(3) span")?.textContent
+    }))
+  );
+
+  const out = [];
+
+  for (const r of rows) {
+    try {
+      const p = await browser.newPage();
+      await p.goto(r.pageLink, { waitUntil: "networkidle2" });
+      await new Promise(r => setTimeout(r, 12000));
+
+      const final = await p.$eval(
+        ".wait-done a[href^='https://pixeldrain.com/']",
+        el => el.href
+      ).catch(() => null);
+
+      if (final) {
+        let mb = r.size.includes("GB")
+          ? parseFloat(r.size) * 1024
+          : parseFloat(r.size);
+
+        if (mb <= 2048) {
+          out.push({
+            link: final,
+            quality: normalizeQuality(r.quality),
+            size: r.size
           });
-        } catch (e) {
-          console.error("[PLUGIN ERROR]", e);
         }
       }
-    }
+      await p.close();
+    } catch {}
+  }
 
-    const replyText = body;
-    for (const handler of replyHandlers) {
-      if (handler.filter(replyText, { sender, message: mek })) {
-        try {
-          await handler.function(test, mek, m, {
-            from, quoted: mek, body: replyText, sender, reply,
-          });
-          break;
-        } catch (e) {
-          console.log("Reply handler error:", e);
-        }
-      }
-    }
-  });
-
-  
-  test.ev.on('messages.update', async (updates) => {
-    if (global.pluginHooks) {
-      for (const plugin of global.pluginHooks) {
-        if (plugin.onDelete) {
-          try {
-            await plugin.onDelete(test, updates);
-          } catch (e) {
-            console.log("onDelete error:", e);
-          }
-        }
-      }
-    }
-  });
+  await browser.close();
+  return out;
 }
 
+/* ================= COMMAND ================= */
 
+cmd({
+  pattern: "movie",
+  react: "🎬",
+  category: "download",
+  filename: __filename
+}, async (danuwa, mek, m, { q, sender, from, reply }) => {
 
-ensureSessionFile();
+  if (!q) return reply("Usage: movie avengers");
 
-app.get("/", (req, res) => {
-  res.send("Hey, test-MD started✅");
+  reply("🔍 Searching movies...");
+  const results = await searchMovies(q);
+
+  if (!results.length) return reply("❌ No movies found");
+
+  pendingSearch[sender] = { results };
+
+  let txt = "*🎬 Search Results*\n\n";
+  results.forEach((r, i) => txt += `*${i + 1}.* ${r.title}\n`);
+  txt += "\nReply with number";
+
+  reply(txt);
 });
 
-app.listen(port, () => console.log(`Server listening on http://localhost:${port}`));
+/* ===== MOVIE NUMBER ===== */
+
+cmd({
+  filter: (t, { sender }) =>
+    pendingSearch[sender] && !isNaN(t)
+}, async (danuwa, mek, m, { body, sender, from }) => {
+
+  const idx = Number(body) - 1;
+  const sel = pendingSearch[sender].results[idx];
+  delete pendingSearch[sender];
+
+  const meta = await getMovieMetadata(sel.movieUrl);
+  const links = await getPixeldrainLinks(sel.movieUrl);
+
+  pendingQuality[sender] = { movie: { meta, links } };
+
+  const buttons = links.map((l, i) => ({
+    id: `MOVIE_Q_${sender}_${i}`,
+    text: `${l.quality} (${l.size})`
+  }));
+
+  await sendButtons(danuwa, from, {
+    text: "📥 Select Movie Quality",
+    footer: meta.title,
+    buttons
+  }, { quoted: mek });
+});
+
+/* ===== BUTTON HANDLER (CORRECT FOR YOUR BOT) ===== */
+
+cmd({
+  filter: (_, ctx) =>
+    ctx.message?.message?.interactiveResponseMessage
+}, async (danuwa, mek, m, { sender, from, reply }) => {
+
+  const native =
+    mek.message.interactiveResponseMessage.nativeFlowResponseMessage;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(native.paramsJson);
+  } catch {
+    return;
+  }
+
+  const id = parsed.id;
+  if (!id || !id.startsWith(`MOVIE_Q_${sender}_`)) return;
+
+  const index = Number(id.split("_").pop());
+  const data = pendingQuality[sender];
+  if (!data) return reply("❌ Session expired");
+
+  delete pendingQuality[sender];
+
+  const sel = data.movie.links[index];
+  reply(`⬇️ Sending ${sel.quality}...`);
+
+  const direct = getDirectPixeldrainUrl(sel.link);
+
+  await danuwa.sendMessage(from, {
+    document: { url: direct },
+    mimetype: "video/mp4",
+    fileName: `${data.movie.meta.title} - ${sel.quality}.mp4`,
+    caption: "Enjoy 🍿"
+  }, { quoted: mek });
+});
+
+module.exports = {};
