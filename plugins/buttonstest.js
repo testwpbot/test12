@@ -1,49 +1,50 @@
 /**
- * List Menu Test Plugin
- * Clicking a row sends exact command (.ping)
+ * Button Test Plugin
+ * Clicking a button sends a command (e.g. .ping)
  */
 
 const { cmd } = require("../command");
+const { sendButtons } = require("gifted-btns");
 
 cmd(
   {
     pattern: "bt",
     alias: ["buttontest", "buttons"],
     react: "🧪",
-    desc: "List menu test (command payload)",
+    desc: "Button test (command payload buttons)",
     category: "test",
     filename: __filename
   },
   async (danuwa, mek, m, { from, quoted }) => {
     try {
-      const listMessage = {
-        text: "🎬 Command List Test",
-        footer: "test-MD • List Menu",
-        title: "Select a command",
-        buttonText: "OPEN MENU",
-        sections: [
-          {
-            title: "Test Commands",
-            rows: [
-              {
-                title: "🏓 Ping",
-                description: "Check bot latency",
-                rowId: ".ping"
-              },
-              {
-                title: "🤖 Alive",
-                description: "Bot status",
-                rowId: ".alive"
-              }
-            ]
-          }
-        ]
-      };
+      // Safety check (required for gifted-btns)
+      if (!danuwa?.user || !danuwa?.relayMessage) {
+        console.log("❌ Invalid Baileys socket");
+        return;
+      }
 
-      await danuwa.sendMessage(from, listMessage, { quoted });
+      // Button payloads MUST be commands
+      const buttons = [
+        { id: ".ping", text: "🏓 Ping" },
+        { id: ".alive", text: "🤖 Alive" }
+      ];
+
+      // Send buttons
+      await sendButtons(
+        danuwa,
+        from,
+        {
+          text: "🎬 Button Command Test",
+          footer: "test-MD • Click = Command",
+          buttons
+        },
+        { quoted }
+      );
+
+      console.log("✅ Button command test sent");
 
     } catch (err) {
-      console.error("❌ List menu error:", err);
+      console.error("❌ Button plugin error:", err);
     }
   }
 );
