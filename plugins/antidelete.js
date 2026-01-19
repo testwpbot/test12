@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+const { downloadContentFromMessage } = require('gifted-baileys');
 
 const tempFolder = path.join(__dirname, '../temp');
 if (!fs.existsSync(tempFolder)) {
