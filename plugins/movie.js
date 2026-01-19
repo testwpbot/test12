@@ -1,15 +1,9 @@
-/**
- * Movie Downloader Plugin with Metadata + Thumbnail + Quality Buttons
- */
-
 const { cmd } = require("../command");
 const { sendButtons } = require("gifted-btns");
 const puppeteer = require("puppeteer");
 
 const pendingSearch = {};
 const pendingQuality = {};
-
-/* ================= UTIL ================= */
 
 function normalizeQuality(text) {
   if (!text) return null;
@@ -25,8 +19,6 @@ function getDirectPixeldrainUrl(url) {
   if (!match) return null;
   return `https://pixeldrain.com/api/file/${match[1]}?download`;
 }
-
-/* ================= SCRAPERS ================= */
 
 async function searchMovies(query) {
   const url = `https://sinhalasub.lk/?s=${encodeURIComponent(query)}&post_type=movies`;
@@ -166,18 +158,13 @@ cmd({
   const selected = pendingSearch[sender].results[index];
   delete pendingSearch[sender];
 
-  // Get metadata + download links
+  // 1️⃣ Fetch metadata immediately
   const metadata = await getMovieMetadata(selected.movieUrl);
-  const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
-  if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
 
-  pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
-
-  // Send metadata + thumbnail first
   let msg = `*🎬 ${metadata.title}*\n`;
   msg += `*📝 Language:* ${metadata.language}\n*⏱️ Duration:* ${metadata.duration}\n*⭐ IMDb:* ${metadata.imdb}\n`;
   msg += `*🎭 Genres:* ${metadata.genres.join(", ")}\n*🎥 Directors:* ${metadata.directors.join(", ")}\n*🌟 Stars:* ${metadata.stars.slice(0,5).join(", ")}${metadata.stars.length>5?"...":""}\n\n`;
-  msg += "*🔢 Select quality by replying or clicking the button below:*";
+  msg += "*🔄 Fetching download links...*";
 
   if (metadata.thumbnail) {
     await danuwa.sendMessage(from, { image: { url: metadata.thumbnail }, caption: msg }, { quoted: mek });
@@ -185,20 +172,24 @@ cmd({
     await danuwa.sendMessage(from, { text: msg }, { quoted: mek });
   }
 
-  // Send quality buttons (1,2,3...)
-  const buttons = downloadLinks.map((d, i) => ({
-    id: `${i+1}`,
-    text: `🎞️ ${d.quality} (${d.size})`
-  }));
+  getPixeldrainLinks(selected.movieUrl).then(async (downloadLinks) => {
+    if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
 
-  await sendButtons(danuwa, from, {
-    text: "Select quality:",
-    footer: "Movie Downloader",
-    buttons
-  }, { quoted: mek });
+    pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
+
+    const buttons = downloadLinks.map((d, i) => ({
+      id: `${i+1}`,
+      text: `🎞️ ${d.quality} (${d.size})`
+    }));
+
+    await sendButtons(danuwa, from, {
+      text: "Select quality:",
+      footer: "Movie Downloader",
+      buttons
+    }, { quoted: mek });
+  }).catch(e => console.error("Download links error:", e));
 });
 
-/* ======= REPLY HANDLER: QUALITY SELECTION ======= */
 
 cmd({
   filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
