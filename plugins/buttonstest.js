@@ -1,7 +1,4 @@
-/**
- * Button Test Plugin
- * Clicking a button sends a command (e.g. .ping)
- */
+
 
 const { cmd } = require("../command");
 const { sendButtons } = require("gifted-btns");
