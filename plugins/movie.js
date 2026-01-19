@@ -151,32 +151,51 @@ cmd({
   if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
   pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
   
-  // Create buttons with NUMBER IDs (1, 2, 3, etc.)
-  const buttons = [];
+  // TRICK: Set button text to NUMBERS but show quality in description
+  // Actually, we need a different approach...
   
+  // Let's use a DIFFERENT trick: We'll map button text to numbers
+  // Store mapping of what button text corresponds to what number
+  pendingQuality[sender].buttonMap = {};
+  downloadLinks.forEach((d, i) => {
+    const buttonText = `${d.quality} - ${d.size}`;
+    pendingQuality[sender].buttonMap[buttonText] = i + 1; // Map "480p - 940 MB" → 2
+  });
+  
+  // Create buttons (they will send back the text)
+  const buttons = [];
   downloadLinks.forEach((d, i) => {
     buttons.push({
-      id: (i + 1).toString(), // Button ID is the number (1, 2, 3...)
-      text: `${d.quality} - ${d.size}` // Button shows quality and size
+      id: (i + 1).toString(), // ID doesn't matter much
+      text: `${d.quality} - ${d.size}` // This is what gets sent back
     });
   });
   
-  // Add cancel button
   buttons.push({
     id: "cancel",
     text: "❌ Cancel"
   });
   
   try {
-    // Send buttons
     await sendButtons(danuwa, from, {
-      text: `*📥 Available Qualities (Max 2GB)*\n*🎬 Movie:* ${metadata.title.substring(0, 50)}${metadata.title.length > 50 ? '...' : ''}`,
-      footer: "Click a button to download | Sinhalasub.lk",
+      text: `*📥 Available Qualities (Max 2GB)*\n*🎬 Movie:* ${metadata.title.substring(0, 50)}${metadata.title.length > 50 ? '...' : ''}\n\n*Button shows quality, but reply with NUMBER:*`,
+      footer: "Click button for quality, then reply with its number (1, 2, etc.)",
       buttons
     }, { quoted: mek });
+    
+    // Also send a text reminder
+    setTimeout(async () => {
+      let numberMsg = "*📋 Quick Reference:*\n";
+      downloadLinks.forEach((d, i) => {
+        numberMsg += `*${i+1}.* = ${d.quality} - ${d.size}\n`;
+      });
+      numberMsg += `\n*After clicking a button, reply with its number (1, 2, etc.)*`;
+      await danuwa.sendMessage(from, { text: numberMsg }, { quoted: mek });
+    }, 1000);
+    
   } catch (error) {
     console.error("Error sending buttons:", error);
-    // Fallback to text if buttons fail
+    // Fallback to text
     let qualityMsg = "*📥 Available Qualities (Max 2GB):*\n";
     downloadLinks.forEach((d,i) => qualityMsg += `*${i+1}.* ${d.quality} - ${d.size}\n`);
     qualityMsg += `\n*Reply with quality number to receive the movie as a document.*`;
@@ -184,13 +203,66 @@ cmd({
   }
 });
 
+// Modified handler to accept BOTH numbers AND button text
 cmd({
-  filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
+  filter: (text, { sender }) => {
+    if (!pendingQuality[sender]) return false;
+    
+    // Check if it's a number (1, 2, 3...)
+    const num = parseInt(text);
+    if (!isNaN(num) && num > 0 && num <= pendingQuality[sender].movie.downloadLinks.length) {
+      return true;
+    }
+    
+    // Check if it's button text (like "480p - 940 MB")
+    if (pendingQuality[sender].buttonMap && pendingQuality[sender].buttonMap[text]) {
+      return true;
+    }
+    
+    // Check for cancel
+    if (text === "cancel" || text === "❌ Cancel") {
+      return true;
+    }
+    
+    return false;
+  }
 }, async (danuwa, mek, m, { body, sender, reply, from }) => {
+  console.log("Quality selection received:", { sender, body });
+  
   await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
-  const index = parseInt(body.trim()) - 1;
-  const { movie } = pendingQuality[sender];
+  
+  // Handle cancel
+  if (body === "cancel" || body === "❌ Cancel") {
+    delete pendingQuality[sender];
+    reply("*❌ Download cancelled*");
+    return;
+  }
+  
+  let index;
+  const session = pendingQuality[sender];
+  
+  // Check if body is a number
+  const num = parseInt(body);
+  if (!isNaN(num)) {
+    index = num - 1;
+  } 
+  // Check if body is button text (mapped to number)
+  else if (session.buttonMap && session.buttonMap[body]) {
+    index = session.buttonMap[body] - 1;
+    console.log("Button text mapped to number:", { buttonText: body, number: session.buttonMap[body], index });
+  } else {
+    reply("*❌ Invalid selection. Please reply with a number (1, 2, etc.)*");
+    return;
+  }
+  
+  const { movie } = session;
   delete pendingQuality[sender];
+  
+  if (index < 0 || index >= movie.downloadLinks.length) {
+    reply("*❌ Invalid selection*");
+    return;
+  }
+  
   const selectedLink = movie.downloadLinks[index];
   reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
   try {
@@ -205,22 +277,6 @@ cmd({
     console.error("Send document error:", error);
     reply(`*❌ Failed to send movie:* ${error.message || "Unknown error"}`);
   }
-});
-
-// Add a special handler for cancel button
-cmd({
-  filter: (text, { sender }) => pendingQuality[sender] && text === "cancel"
-}, async (danuwa, mek, m, { sender, reply }) => {
-  delete pendingQuality[sender];
-  reply("*❌ Download cancelled*");
-});
-
-// Also handle if user sends "cancel" as text
-cmd({
-  filter: (text, { sender }) => pendingQuality[sender] && text.toLowerCase() === "cancel"
-}, async (danuwa, mek, m, { sender, reply }) => {
-  delete pendingQuality[sender];
-  reply("*❌ Download cancelled*");
 });
 
 setInterval(() => {
