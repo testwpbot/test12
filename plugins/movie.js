@@ -1,3 +1,8 @@
+/**
+ * Movie Downloader Plugin with Buttons
+ * Quality selection via buttons (1,2,3...) using reply handlers
+ */
+
 const { cmd } = require("../command");
 const { sendButtons } = require("gifted-btns");
 const puppeteer = require("puppeteer");
@@ -61,10 +66,8 @@ async function getMovieMetadata(url) {
   const metadata = await page.evaluate(() => {
     const getText = el => el?.textContent.trim() || "";
     const getList = selector => Array.from(document.querySelectorAll(selector)).map(el => el.textContent.trim());
-
     const title = getText(document.querySelector(".info-details .details-title h3"));
     let language = "", directors = [], stars = [];
-
     document.querySelectorAll(".info-col p").forEach(p => {
       const strong = p.querySelector("strong");
       if (!strong) return;
@@ -73,12 +76,11 @@ async function getMovieMetadata(url) {
       if (txt.includes("Director:")) directors = Array.from(p.querySelectorAll("a")).map(a => a.textContent.trim());
       if (txt.includes("Stars:")) stars = Array.from(p.querySelectorAll("a")).map(a => a.textContent.trim());
     });
-
     return {
       title,
       language,
       duration: getText(document.querySelector(".data-views[itemprop='duration']")),
-      imdb: getText(document.querySelector(".data-imdb")).replace("IMDb:", "").trim(),
+      imdb: getText(document.querySelector(".data-imdb"))?.replace("IMDb:", "").trim(),
       genres: getList(".details-genre a"),
       directors,
       stars,
@@ -95,7 +97,7 @@ async function getPixeldrainLinks(movieUrl) {
   const page = await browser.newPage();
   await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
 
-  const links = await page.$$eval(".link-pixeldrain tbody tr", rows =>
+  const linksData = await page.$$eval(".link-pixeldrain tbody tr", rows =>
     rows.map(row => {
       const a = row.querySelector(".link-opt a");
       const quality = row.querySelector(".quality")?.textContent.trim() || "";
@@ -104,122 +106,122 @@ async function getPixeldrainLinks(movieUrl) {
     })
   );
 
-  const results = [];
-
-  for (const l of links) {
+  const directLinks = [];
+  for (const l of linksData) {
     try {
-      const sub = await browser.newPage();
-      await sub.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
+      const subPage = await browser.newPage();
+      await subPage.goto(l.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
       await new Promise(r => setTimeout(r, 12000));
-
-      const finalUrl = await sub.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href).catch(() => null);
+      const finalUrl = await subPage.$eval(".wait-done a[href^='https://pixeldrain.com/']", el => el.href).catch(() => null);
       if (finalUrl) {
-        results.push({
-          link: finalUrl,
-          quality: normalizeQuality(l.quality),
-          size: l.size
-        });
+        let sizeMB = 0;
+        const sizeText = l.size.toUpperCase();
+        if (sizeText.includes("GB")) sizeMB = parseFloat(sizeText) * 1024;
+        else if (sizeText.includes("MB")) sizeMB = parseFloat(sizeText);
+        if (sizeMB <= 2048) {
+          directLinks.push({ link: finalUrl, quality: normalizeQuality(l.quality), size: l.size });
+        }
       }
-      await sub.close();
-    } catch {}
+      await subPage.close();
+    } catch (e) { continue; }
   }
-
   await browser.close();
-  return results;
+  return directLinks;
 }
 
 /* ================= COMMANDS ================= */
 
 cmd({
   pattern: "movie",
-  alias: ["sinhalasub", "films"],
+  alias: ["sinhalasub","films","cinema"],
   react: "🎬",
-  desc: "Search SinhalaSub movies",
+  desc: "Search and send movies from Sinhalasub.lk",
   category: "download",
   filename: __filename
-}, async (danuwa, mek, m, { q, sender, reply }) => {
-  if (!q) return reply("🎬 *Usage:* movie <name>");
+}, async (danuwa, mek, m, { from, q, sender, reply }) => {
+  if (!q) return reply(`*🎬 Movie Search Plugin*\nUsage: movie_name\nExample: movie avengers`);
 
-  reply("🔍 Searching movies...");
-  const results = await searchMovies(q);
-  if (!results.length) return reply("❌ No movies found");
+  reply("*🔍 Searching for movies...*");
+  const searchResults = await searchMovies(q);
+  if (!searchResults.length) return reply("*❌ No movies found!*");
 
-  pendingSearch[sender] = { results, timestamp: Date.now() };
+  pendingSearch[sender] = { results: searchResults, timestamp: Date.now() };
 
-  let msg = "*🎬 Search Results:*\n\n";
-  results.forEach((r, i) => {
-    msg += `*${i + 1}.* ${r.title}\n🌐 ${r.language} | ${r.quality}\n\n`;
+  // Send search results as text
+  let text = "*🎬 Search Results:*\n";
+  searchResults.forEach((m, i) => {
+    text += `*${i+1}.* ${m.title}\n   📝 Language: ${m.language}\n   📊 Quality: ${m.quality}\n   🎞️ Format: ${m.qty}\n`;
   });
-  msg += "_Reply with movie number_";
-
-  reply(msg);
+  text += `\n*Reply with movie number (1-${searchResults.length})*`;
+  reply(text);
 });
 
-cmd({
-  filter: (t, { sender }) =>
-    pendingSearch[sender] &&
-    !isNaN(t) &&
-    t > 0 &&
-    t <= pendingSearch[sender].results.length
-}, async (danuwa, mek, m, { body, sender, from }) => {
+/* ======= REPLY HANDLER: MOVIE SELECTION ======= */
 
-  const index = Number(body) - 1;
+cmd({
+  filter: (text, { sender }) => pendingSearch[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingSearch[sender].results.length
+}, async (danuwa, mek, m, { body, sender, reply, from }) => {
+  await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
+
+  const index = parseInt(body) - 1;
   const selected = pendingSearch[sender].results[index];
   delete pendingSearch[sender];
 
   const metadata = await getMovieMetadata(selected.movieUrl);
-  const links = await getPixeldrainLinks(selected.movieUrl);
+  const downloadLinks = await getPixeldrainLinks(selected.movieUrl);
 
-  pendingQuality[sender] = { metadata, links };
+  if (!downloadLinks.length) return reply("*❌ No download links found (<2GB)!*");
 
-  const buttons = links.map((l, i) => ({
-    id: `.movieq_${i}`,
-    text: `🎞️ ${l.quality} (${l.size})`
+  pendingQuality[sender] = { movie: { metadata, downloadLinks }, timestamp: Date.now() };
+
+  // Send **buttons** with numbers as IDs
+  const buttons = downloadLinks.map((d,i) => ({
+    id: `${i+1}`, // number ID for reply handler
+    text: `🎞️ ${d.quality} (${d.size})`
   }));
 
-  await sendButtons(
-    danuwa,
-    from,
-    {
-      text: `🎬 *${metadata.title}*\nSelect quality:`,
-      footer: "Movie Downloader",
-      buttons
-    },
-    { quoted: mek }
-  );
+  await sendButtons(danuwa, from, {
+    text: `🎬 *${metadata.title}*\nSelect quality:`,
+    footer: "Movie Downloader",
+    buttons
+  }, { quoted: mek });
 });
 
-/* ================= QUALITY BUTTON HANDLER ================= */
+/* ======= REPLY HANDLER: QUALITY SELECTION ======= */
 
 cmd({
-  pattern: "movieq_(.*)",
-  dontAddCommandList: true
-}, async (danuwa, mek, m, { from, sender }) => {
+  filter: (text, { sender }) => pendingQuality[sender] && !isNaN(text) && parseInt(text) > 0 && parseInt(text) <= pendingQuality[sender].movie.downloadLinks.length
+}, async (danuwa, mek, m, { body, sender, reply, from }) => {
+  await danuwa.sendMessage(from, { react: { text: "✅", key: m.key } });
 
-  if (!pendingQuality[sender]) return;
-  const index = Number(m.text.split("_")[1]);
-
-  const { metadata, links } = pendingQuality[sender];
-  const selected = links[index];
+  const index = parseInt(body) - 1;
+  const { movie } = pendingQuality[sender];
   delete pendingQuality[sender];
 
-  const direct = getDirectPixeldrainUrl(selected.link);
+  const selectedLink = movie.downloadLinks[index];
+  reply(`*⬇️ Sending ${selectedLink.quality} movie as document...*\nPlease wait.`);
 
-  await danuwa.sendMessage(from, {
-    document: { url: direct },
-    mimetype: "video/mp4",
-    fileName: `${metadata.title} - ${selected.quality}.mp4`,
-    caption: `🎬 *${metadata.title}*\n📊 ${selected.quality}\n💾 ${selected.size}`
-  }, { quoted: mek });
+  try {
+    const directUrl = getDirectPixeldrainUrl(selectedLink.link);
+    await danuwa.sendMessage(from, {
+      document: { url: directUrl },
+      mimetype: "video/mp4",
+      fileName: `${movie.metadata.title.substring(0,50)} - ${selectedLink.quality}.mp4`.replace(/[^\w\s.-]/gi,''),
+      caption: `*🎬 ${movie.metadata.title}*\n*📊 Quality:* ${selectedLink.quality}\n*💾 Size:* ${selectedLink.size}\n\n*Enjoy your movie! 🍿*`
+    }, { quoted: mek });
+  } catch (error) {
+    console.error("Send document error:", error);
+    reply(`*❌ Failed to send movie:* ${error.message || "Unknown error"}`);
+  }
 });
 
 /* ================= CLEANUP ================= */
 
 setInterval(() => {
   const now = Date.now();
-  const timeout = 10 * 60 * 1000;
-  for (const u in pendingSearch)
-    if (now - pendingSearch[u].timestamp > timeout) delete pendingSearch[u];
-  for (const u in pendingQuality)
-    if (now - pendingQuality[u]?.timestamp > timeout) delete pendingQuality[u];
-}, 5 * 60 * 1000);
+  const timeout = 10*60*1000;
+  for (const s in pendingSearch) if (now - pendingSearch[s].timestamp > timeout) delete pendingSearch[s];
+  for (const s in pendingQuality) if (now - pendingQuality[s].timestamp > timeout) delete pendingQuality[s];
+}, 5*60*1000);
+
+module.exports = { pendingSearch, pendingQuality };
