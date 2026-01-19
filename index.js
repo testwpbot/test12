@@ -227,9 +227,40 @@ if (mek.key?.remoteJid === 'status@broadcast') {
 
 
     const m = sms(test, mek);
-    const type = getContentType(mek.message);
-    const from = mek.key.remoteJid;
-    const body = type === 'conversation' ? mek.message.conversation : mek.message[type]?.text || mek.message[type]?.caption || '';
+const type = getContentType(mek.message);
+const from = mek.key.remoteJid;
+
+// Get message body/text from ALL possible message types
+let body = '';
+if (type === 'conversation') {
+    body = mek.message.conversation || '';
+} else if (type === 'extendedTextMessage') {
+    body = mek.message.extendedTextMessage?.text || '';
+} else if (type === 'buttonsResponseMessage') {
+    // THIS IS CRITICAL FOR BUTTONS!
+    body = mek.message.buttonsResponseMessage?.selectedButtonId || 
+           mek.message.buttonsResponseMessage?.selectedDisplayText || '';
+} else if (type === 'interactiveResponseMessage') {
+    // For interactive messages
+    const interactive = mek.message.interactiveResponseMessage;
+    if (interactive?.nativeFlowResponseMessage) {
+        body = interactive.nativeFlowResponseMessage?.paramsJson || 
+               interactive.nativeFlowResponseMessage?.name || '';
+    }
+} else if (mek.message[type]) {
+    body = mek.message[type]?.text || mek.message[type]?.caption || '';
+}
+
+// Debug: Log button clicks
+if (type === 'buttonsResponseMessage' || type === 'interactiveResponseMessage') {
+    console.log('🎬 BUTTON CLICK DETECTED:', {
+        type,
+        body,
+        sender: mek.key.remoteJid,
+        selectedButtonId: mek.message.buttonsResponseMessage?.selectedButtonId,
+        selectedDisplayText: mek.message.buttonsResponseMessage?.selectedDisplayText
+    });
+}
     const isCmd = body.startsWith(prefix);
     const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
     const args = body.trim().split(/ +/).slice(1);
