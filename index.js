@@ -231,36 +231,27 @@ const type = getContentType(mek.message)
 const content = JSON.stringify(mek.message)
 const from = mek.key.remoteJid
 const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.contextInfo != null ? mek.message.extendedTextMessage.contextInfo.quotedMessage || [] : []
-const body = 
+const body =
   (type === 'conversation') ? mek.message.conversation :
-  (type === 'extendedTextMessage' && mek.message.extendedTextMessage?.contextInfo?.quotedMessage &&
-   await isbtnID(mek.message.extendedTextMessage.contextInfo.stanzaId)) ?
-    await getCmdForCmdId(
-      await getCMDStore(mek.message.extendedTextMessage.contextInfo.stanzaId),
-      mek.message.extendedTextMessage.text
-    ) :
   (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
   (type === 'templateButtonReplyMessage') ? mek.message.templateButtonReplyMessage?.selectedId :
   (type === 'interactiveResponseMessage') ? (() => {
     try {
-      const json = JSON.parse(mek.message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson);
+      const json = JSON.parse(
+        mek.message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson
+      );
       return json?.id || '';
-    } catch { return ''; }
+    } catch {
+      return '';
+    }
   })() :
-  (type === 'imageMessage' && mek.message.imageMessage?.caption) ? mek.message.imageMessage.caption :
-  (type === 'videoMessage' && mek.message.videoMessage?.caption) ? mek.message.videoMessage.caption :
-  // fallback for unknown or malformed types
+  (type === 'imageMessage') ? mek.message.imageMessage?.caption :
+  (type === 'videoMessage') ? mek.message.videoMessage?.caption :
   m.msg?.text ||
   m.msg?.conversation ||
   m.msg?.caption ||
-  m.message?.conversation ||
   m.msg?.selectedButtonId ||
   m.msg?.singleSelectReply?.selectedRowId ||
-  m.msg?.selectedId ||
-  m.msg?.contentText ||
-  m.msg?.selectedDisplayText ||
-  m.msg?.title ||
-  m.msg?.name ||
   '';
     const isCmd = body.startsWith(prefix);
     const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
