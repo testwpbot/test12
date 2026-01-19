@@ -17,9 +17,8 @@ function normalizeQuality(text) {
 }
 
 function getDirectPixeldrainUrl(url) {
-  const match = url.match(/pixeldrain\.com\/u\/(\w+)/);
-  if (!match) return null;
-  return `https://pixeldrain.com/api/file/${match[1]}?download`;
+  const m = url.match(/pixeldrain\.com\/u\/(\w+)/);
+  return m ? `https://pixeldrain.com/api/file/${m[1]}?download` : null;
 }
 
 /* ================= SCRAPERS ================= */
@@ -34,17 +33,12 @@ async function searchMovies(query) {
   const results = await page.$$eval(".display-item .item-box", boxes =>
     boxes.slice(0, 10).map((box, i) => {
       const a = box.querySelector("a");
-      const img = box.querySelector(".thumb");
       return {
         id: i + 1,
-        title: a?.title?.trim() || "",
-        movieUrl: a?.href || "",
-        thumb: img?.src || "",
-        language: box.querySelector(".language")?.textContent.trim() || "",
-        quality: box.querySelector(".quality")?.textContent.trim() || "",
-        qty: box.querySelector(".qty")?.textContent.trim() || ""
+        title: a?.title?.trim(),
+        movieUrl: a?.href
       };
-    }).filter(m => m.title && m.movieUrl)
+    }).filter(Boolean)
   );
 
   await browser.close();
@@ -58,28 +52,13 @@ async function getMovieMetadata(url) {
   await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
 
   const data = await page.evaluate(() => {
-    const txt = el => el?.textContent.trim() || "";
-    const list = sel => [...document.querySelectorAll(sel)].map(e => e.textContent.trim());
-
-    let language = "", directors = [], stars = [];
-
-    document.querySelectorAll(".info-col p").forEach(p => {
-      const strong = p.querySelector("strong");
-      if (!strong) return;
-      const t = strong.textContent;
-      if (t.includes("Language")) language = strong.nextSibling?.textContent?.trim() || "";
-      if (t.includes("Director")) directors = list("a", p);
-      if (t.includes("Stars")) stars = list("a", p);
-    });
-
+    const txt = s => document.querySelector(s)?.textContent.trim() || "";
     return {
-      title: txt(document.querySelector(".details-title h3")),
-      duration: txt(document.querySelector("[itemprop='duration']")),
-      imdb: txt(document.querySelector(".data-imdb")).replace("IMDb:", "").trim(),
-      genres: list(".details-genre a"),
-      language,
-      directors,
-      stars,
+      title: txt(".details-title h3"),
+      language: txt(".info-col strong:contains('Language')") || "English",
+      duration: txt("[itemprop='duration']"),
+      imdb: txt(".data-imdb").replace("IMDb:", "").trim(),
+      genres: [...document.querySelectorAll(".details-genre a")].map(a => a.textContent),
       thumbnail: document.querySelector(".splash-bg img")?.src || ""
     };
   });
@@ -91,24 +70,23 @@ async function getMovieMetadata(url) {
 async function getPixeldrainLinks(movieUrl) {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
-
   await page.goto(movieUrl, { waitUntil: "networkidle2", timeout: 30000 });
 
   const rows = await page.$$eval(".link-pixeldrain tbody tr", trs =>
     trs.map(tr => ({
-      pageLink: tr.querySelector(".link-opt a")?.href || "",
-      quality: tr.querySelector(".quality")?.textContent.trim() || "",
-      size: tr.querySelector("td:nth-child(3) span")?.textContent.trim() || ""
+      pageLink: tr.querySelector(".link-opt a")?.href,
+      quality: tr.querySelector(".quality")?.textContent,
+      size: tr.querySelector("td:nth-child(3) span")?.textContent
     }))
   );
 
-  const links = [];
+  const out = [];
 
   for (const r of rows) {
     try {
       const p = await browser.newPage();
-      await p.goto(r.pageLink, { waitUntil: "networkidle2", timeout: 30000 });
-      await new Promise(res => setTimeout(res, 12000));
+      await p.goto(r.pageLink, { waitUntil: "networkidle2" });
+      await new Promise(r => setTimeout(r, 12000));
 
       const final = await p.$eval(
         ".wait-done a[href^='https://pixeldrain.com/']",
@@ -116,13 +94,12 @@ async function getPixeldrainLinks(movieUrl) {
       ).catch(() => null);
 
       if (final) {
-        let mb = 0;
-        const s = r.size.toUpperCase();
-        if (s.includes("GB")) mb = parseFloat(s) * 1024;
-        if (s.includes("MB")) mb = parseFloat(s);
+        let mb = r.size.includes("GB")
+          ? parseFloat(r.size) * 1024
+          : parseFloat(r.size);
 
         if (mb <= 2048) {
-          links.push({
+          out.push({
             link: final,
             quality: normalizeQuality(r.quality),
             size: r.size
@@ -134,76 +111,53 @@ async function getPixeldrainLinks(movieUrl) {
   }
 
   await browser.close();
-  return links;
+  return out;
 }
 
-/* ================= COMMANDS ================= */
+/* ================= COMMAND ================= */
 
 cmd({
   pattern: "movie",
-  alias: ["sinhalasub", "films", "cinema"],
   react: "🎬",
-  desc: "Search movies from Sinhalasub.lk",
   category: "download",
   filename: __filename
 }, async (danuwa, mek, m, { q, sender, from, reply }) => {
 
-  if (!q) return reply("*🎬 Usage:* movie avengers");
+  if (!q) return reply("Usage: movie avengers");
 
-  reply("*🔍 Searching movies...*");
-
+  reply("🔍 Searching movies...");
   const results = await searchMovies(q);
-  if (!results.length) return reply("*❌ No movies found!*");
 
-  pendingSearch[sender] = { results, timestamp: Date.now() };
+  if (!results.length) return reply("❌ No movies found");
 
-  let msg = "*🎬 Search Results*\n\n";
-  results.forEach((r, i) => {
-    msg += `*${i + 1}.* ${r.title}\n📝 ${r.language} | 📊 ${r.quality}\n\n`;
-  });
+  pendingSearch[sender] = { results };
 
-  msg += "*Reply with movie number*";
-  reply(msg);
+  let txt = "*🎬 Search Results*\n\n";
+  results.forEach((r, i) => txt += `*${i + 1}.* ${r.title}\n`);
+  txt += "\nReply with number";
+
+  reply(txt);
 });
 
-/* ===== MOVIE NUMBER SELECTION ===== */
+/* ===== MOVIE NUMBER ===== */
 
 cmd({
   filter: (t, { sender }) =>
-    pendingSearch[sender] &&
-    !isNaN(t) &&
-    t > 0 &&
-    t <= pendingSearch[sender].results.length
+    pendingSearch[sender] && !isNaN(t)
 }, async (danuwa, mek, m, { body, sender, from }) => {
 
-  const index = Number(body) - 1;
-  const selected = pendingSearch[sender].results[index];
+  const idx = Number(body) - 1;
+  const sel = pendingSearch[sender].results[idx];
   delete pendingSearch[sender];
 
-  const meta = await getMovieMetadata(selected.movieUrl);
+  const meta = await getMovieMetadata(sel.movieUrl);
+  const links = await getPixeldrainLinks(sel.movieUrl);
 
-  const caption =
-    `*🎬 ${meta.title}*\n` +
-    `📝 ${meta.language}\n` +
-    `⏱️ ${meta.duration}\n` +
-    `⭐ IMDb: ${meta.imdb}\n` +
-    `🎭 ${meta.genres.join(", ")}\n\n` +
-    "*🔗 Fetching download links...*";
-
-  if (meta.thumbnail) {
-    await danuwa.sendMessage(from, { image: { url: meta.thumbnail }, caption }, { quoted: mek });
-  } else {
-    await danuwa.sendMessage(from, { text: caption }, { quoted: mek });
-  }
-
-  const links = await getPixeldrainLinks(selected.movieUrl);
-  if (!links.length) return danuwa.sendMessage(from, { text: "*❌ No links under 2GB!*" });
-
-  pendingQuality[sender] = { movie: { metadata: meta, downloadLinks: links }, timestamp: Date.now() };
+  pendingQuality[sender] = { movie: { meta, links } };
 
   const buttons = links.map((l, i) => ({
     id: `MOVIE_Q_${sender}_${i}`,
-    text: `🎞️ ${l.quality} (${l.size})`
+    text: `${l.quality} (${l.size})`
   }));
 
   await sendButtons(danuwa, from, {
@@ -213,73 +167,43 @@ cmd({
   }, { quoted: mek });
 });
 
-/* ===== BUTTON HANDLER (NATIVE_FLOW FIX) ===== */
+/* ===== BUTTON HANDLER (CORRECT FOR YOUR BOT) ===== */
 
 cmd({
-  filter: (_, { m }) =>
-    m.message?.interactiveResponseMessage?.nativeFlowResponseMessage
+  filter: (_, ctx) =>
+    ctx.message?.message?.interactiveResponseMessage
 }, async (danuwa, mek, m, { sender, from, reply }) => {
 
   const native =
-    m.message.interactiveResponseMessage.nativeFlowResponseMessage;
+    mek.message.interactiveResponseMessage.nativeFlowResponseMessage;
 
-  let data;
+  let parsed;
   try {
-    data = JSON.parse(native.paramsJson);
+    parsed = JSON.parse(native.paramsJson);
   } catch {
     return;
   }
 
-  const buttonId = data.id;
-  if (!buttonId || !buttonId.startsWith(`MOVIE_Q_${sender}_`)) return;
+  const id = parsed.id;
+  if (!id || !id.startsWith(`MOVIE_Q_${sender}_`)) return;
 
-  const index = Number(buttonId.split("_").pop());
-  const pending = pendingQuality[sender];
-  if (!pending) return reply("*❌ Session expired. Search again.*");
+  const index = Number(id.split("_").pop());
+  const data = pendingQuality[sender];
+  if (!data) return reply("❌ Session expired");
 
-  const { movie } = pending;
   delete pendingQuality[sender];
 
-  const selected = movie.downloadLinks[index];
-  if (!selected) return reply("*❌ Invalid selection.*");
+  const sel = data.movie.links[index];
+  reply(`⬇️ Sending ${sel.quality}...`);
+
+  const direct = getDirectPixeldrainUrl(sel.link);
 
   await danuwa.sendMessage(from, {
-    react: { text: "✅", key: m.key }
-  });
-
-  reply(`*⬇️ Sending ${selected.quality} movie…*`);
-
-  try {
-    const direct = getDirectPixeldrainUrl(selected.link);
-
-    await danuwa.sendMessage(from, {
-      document: { url: direct },
-      mimetype: "video/mp4",
-      fileName: `${movie.metadata.title} - ${selected.quality}.mp4`
-        .replace(/[^\w\s.-]/gi, ""),
-      caption:
-        `*🎬 ${movie.metadata.title}*\n` +
-        `📊 Quality: ${selected.quality}\n` +
-        `💾 Size: ${selected.size}\n\nEnjoy 🍿`
-    }, { quoted: mek });
-
-  } catch (err) {
-    console.error("Movie send error:", err);
-    reply("*❌ Failed to send movie.*");
-  }
+    document: { url: direct },
+    mimetype: "video/mp4",
+    fileName: `${data.movie.meta.title} - ${sel.quality}.mp4`,
+    caption: "Enjoy 🍿"
+  }, { quoted: mek });
 });
 
-/* ================= CLEANUP ================= */
-
-setInterval(() => {
-  const now = Date.now();
-  const ttl = 10 * 60 * 1000;
-
-  for (const u in pendingSearch)
-    if (now - pendingSearch[u].timestamp > ttl) delete pendingSearch[u];
-
-  for (const u in pendingQuality)
-    if (now - pendingQuality[u].timestamp > ttl) delete pendingQuality[u];
-}, 5 * 60 * 1000);
-
-module.exports = { pendingSearch, pendingQuality };
+module.exports = {};
