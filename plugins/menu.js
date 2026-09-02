@@ -1,4 +1,5 @@
 const { cmd, commands } = require("../command");
+const config = require("../config");
 const { sendButtons, sendInteractive } = require("../lib/buttons");
 const fs = require("fs");
 
@@ -72,7 +73,7 @@ cmd({
 
       // Build navigation buttons for other categories & main menu
       const subMenuButtons = [
-        { id: ".menu", text: "🏠 Main Menu" }
+        { id: `${config.PREFIX}menu`, text: "🏠 Main Menu" }
       ];
 
       // Add up to 4 other category buttons
@@ -81,7 +82,7 @@ cmd({
         .slice(0, 4)
         .forEach(cat => {
           subMenuButtons.push({
-            id: `.menu ${cat.toLowerCase()}`,
+            id: `${config.PREFIX}menu ${cat.toLowerCase()}`,
             text: `${getCategoryEmoji(cat)} ${cat}`
           });
         });
@@ -89,9 +90,9 @@ cmd({
       // Try sending with interactive buttons
       try {
         await m.sendButtons({
-          title: `DANUWA-MD | ${matchedCategory}`,
+          title: `${config.BOT_NAME} | ${matchedCategory}`,
           text: subMenuText,
-          footer: "DANUWA-MD WhatsApp Bot",
+          footer: `${config.BOT_NAME} WhatsApp Bot`,
           image: headerImage,
           buttons: subMenuButtons
         });
@@ -108,7 +109,7 @@ cmd({
     }
 
     // --- RENDER MAIN MENU WITH CATEGORY BUTTONS ---
-    let menuText = `╭━━━〔 *DANUWA-MD MAIN MENU* 〕━━━┈\n┃\n`;
+    let menuText = `╭━━━〔 *${config.BOT_NAME} MAIN MENU* 〕━━━┈\n┃\n`;
     menuText += `┃ 🤖 *Bot Status:* Active ✅\n`;
     menuText += `┃ 📊 *Total Commands:* ${totalCommands}\n`;
     menuText += `┃ 📁 *Categories:* ${categories.length}\n┃\n`;
@@ -128,20 +129,20 @@ cmd({
 
     // Build buttons for main menu categories
     const mainButtons = categories.slice(0, 5).map(cat => ({
-      id: `.menu ${cat.toLowerCase()}`,
+      id: `${config.PREFIX}menu ${cat.toLowerCase()}`,
       text: `${getCategoryEmoji(cat)} ${cat} Menu`
     }));
 
     // If more than 5 categories exist, send as a single select list
     if (categories.length > 5) {
       const rows = categories.map((cat, i) => ({
-        id: `.menu ${cat.toLowerCase()}`,
+        id: `${config.PREFIX}menu ${cat.toLowerCase()}`,
         title: `${getCategoryEmoji(cat)} ${cat} MENU`,
         description: `View ${commandMap[cat].length} commands in ${cat}`
       }));
 
       await m.sendButtonMenu({
-        title: "DANUWA-MD BOT MENU",
+        title: `${config.BOT_NAME} BOT MENU`,
         text: menuText,
         footer: "Select a command category below",
         image: headerImage,
@@ -153,7 +154,7 @@ cmd({
       });
     } else {
       await m.sendButtons({
-        title: "DANUWA-MD BOT MENU",
+        title: `${config.BOT_NAME} BOT MENU`,
         text: menuText,
         footer: "Click a category button below",
         image: headerImage,
@@ -191,7 +192,7 @@ cmd({
     cmdText += `📌 *Total Commands:* ${cmdsInCategory.length}\n`;
 
     const subMenuButtons = [
-      { id: ".menu", text: "🏠 Main Menu" }
+      { id: `${config.PREFIX}menu`, text: "🏠 Main Menu" }
     ];
 
     categories
@@ -199,15 +200,15 @@ cmd({
       .slice(0, 4)
       .forEach(cat => {
         subMenuButtons.push({
-          id: `.menu ${cat.toLowerCase()}`,
+          id: `${config.PREFIX}menu ${cat.toLowerCase()}`,
           text: `${getCategoryEmoji(cat)} ${cat}`
         });
       });
 
     await m.sendButtons({
-      title: `DANUWA-MD | ${selectedCategory}`,
+      title: `${config.BOT_NAME} | ${selectedCategory}`,
       text: cmdText,
-      footer: "DANUWA-MD WhatsApp Bot",
+      footer: `${config.BOT_NAME} WhatsApp Bot`,
       image: headerImage,
       buttons: subMenuButtons
     });
