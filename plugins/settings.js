@@ -171,14 +171,7 @@ cmd(
     async (sock, mek, m, { sender, senderNumber, args, isOwner, isMe, reply }) => {
       try {
         if (!isOwner && !isMe) {
-          const seen = senderNumber || String(sender || "").split("@")[0] || "unknown";
-          return reply(
-            "⛔ Owner only — you are not allowed to change the bot configuration.\n\n" +
-            `🪪 The bot sees you as: *${seen}*\n` +
-            `If that IS your number, it is not set as BOT_OWNER yet.\n` +
-            `Fix it in config.js (or the current owner can send):\n` +
-            `\`${config.PREFIX}settings set BOT_OWNER ${seen}\``
-          );
+          return reply("⛔ Owner only — you are not allowed to change the bot configuration.");
         }
 
       const action = (args[0] || "").toLowerCase();
