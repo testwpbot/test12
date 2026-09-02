@@ -167,7 +167,6 @@ cmd({
   }
 });
 
-// Reply handler fallback for number selection (1, 2, 3...)
 cmd({
   filter: (text, { sender }) => pendingMenu[sender] && pendingMenu[sender].step === "category" && /^[1-9][0-9]*$/.test(text.trim())
 }, async (test, m, msg, { from, body, sender, reply }) => {
