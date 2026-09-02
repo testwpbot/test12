@@ -22,7 +22,9 @@ const SETTINGS = {
   ALIVE_MSG: "*Hello👋 DANUWA-MD Is Alive Now😍*",
   ALIVE_IMG: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/DANUWA-MD.png?raw=true",
   AUTO_STATUS_SEEN: "true",
-  AUTO_STATUS_REACT: "true"
+  AUTO_STATUS_REACT: "true",
+  BLOCK_CALLS: "true",
+  BLOCK_CALLS_MSG: "📵 Sorry, calls are not allowed on this number. Please send a text message instead."
 };
 
 /**
@@ -89,6 +91,17 @@ const SETTINGS_META = {
     label: 'Auto status react',
     desc: 'Auto-react with a random emoji to statuses',
     type: 'boolean'
+  },
+  BLOCK_CALLS: {
+    label: 'Block calls',
+    desc: 'Auto-reject calls from non-owner users',
+    type: 'boolean'
+  },
+  BLOCK_CALLS_MSG: {
+    label: 'Blocked call message',
+    desc: 'Auto-reply to blocked callers (empty = silent)',
+    type: 'text',
+    validate: (v) => (v.length <= 200 ? true : 'Keep the message under 200 characters.')
   }
 };
 

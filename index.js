@@ -122,6 +122,44 @@ async function connectToWA() {
 
   test.ev.on('creds.update', saveCreds);
 
+  // ── 📵 Block calls from non-owner users to the bot's (BOT_OWNER) number ──
+  // Incoming call offers are auto-rejected while BLOCK_CALLS is on. The caller
+  // gets an optional auto-reply (BLOCK_CALLS_MSG, max once per 10 min) and the
+  // owner gets a notice in the log chat (max once per min per caller).
+  const callerNoticeAt = {};                 // caller jid -> last auto-reply (ms)
+  const callLogAt = {};                      // caller jid -> last owner notice (ms)
+  const CALLER_NOTICE_TTL = 10 * 60 * 1000;  // 1 auto-reply / 10 min / caller
+  const CALL_LOG_TTL = 60 * 1000;            // 1 owner notice / min / caller
+
+  test.ev.on('call', async (calls) => {
+    if (!config.isEnabled('BLOCK_CALLS')) return;
+    for (const call of Array.isArray(calls) ? calls : [calls]) {
+      try {
+        if (!call || call.isGroup || call.offline) continue;
+        if (call.status !== 'offer') continue;        // block when it starts ringing
+        if (config.isOwner(call.from)) continue;      // owner numbers may still call
+
+        await test.rejectCall(call.id, call.from);
+        console.log(`📵 Blocked call from ${call.from}`);
+
+        const now = Date.now();
+        const msg = String(config.BLOCK_CALLS_MSG || '').trim();
+        if (msg && (!callerNoticeAt[call.from] || now - callerNoticeAt[call.from] > CALLER_NOTICE_TTL)) {
+          callerNoticeAt[call.from] = now;
+          await test.sendMessage(call.from, { text: msg });
+        }
+        if (!callLogAt[call.from] || now - callLogAt[call.from] > CALL_LOG_TTL) {
+          callLogAt[call.from] = now;
+          await test.sendMessage(config.logJid(), {
+            text: `📵 *Call blocked*\n👤 Caller: ${call.from}\n🎥 Type: ${call.isVideo ? 'Video' : 'Voice'}\n🕒 ${new Date().toLocaleString()}`
+          });
+        }
+      } catch (e) {
+        console.error('❌ Error blocking call:', e.message || e);
+      }
+    }
+  });
+
   test.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       if (msg.messageStubType === 68) {
