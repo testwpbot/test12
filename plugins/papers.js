@@ -19,12 +19,12 @@ const config = require('../config');
 const gdrive = require('../lib/gdrive');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
-const CACHE_TTL = 10 * 60 * 1000;        // drive index cache
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
 const PAGE_SIZE = 30;                    // entries per list message
 const MAX_ACTIVE_DOWNLOADS = 2;          // parallel uploads to WhatsApp
 const DEFAULT_MAX_MB = 95;
 const DEFAULT_COOLDOWN = 30;             // seconds between downloads per user
+const DEFAULT_CACHE_MIN = 10;            // drive index cache
 
 /* ── state ───────────────────────────────────────────────────────────── */
 let cache = { at: 0, building: null, index: null };
@@ -42,6 +42,10 @@ function cooldownMs() {
   const s = parseInt(String(config.PAPERS_COOLDOWN_SEC || '').trim(), 10);
   return (Number.isFinite(s) && s >= 0 ? s : DEFAULT_COOLDOWN) * 1000;
 }
+function cacheTtlMs() {
+  const m = parseInt(String(config.PAPERS_CACHE_MIN || '').trim(), 10);
+  return (Number.isFinite(m) && m >= 1 && m <= 720 ? m : DEFAULT_CACHE_MIN) * 60 * 1000;
+}
 
 /* ── download queue (protects the bot number from mass-sending) ─────── */
 function enqueue(task) {
@@ -57,22 +61,67 @@ function pump() {
   }
 }
 
-/* ── drive index (cached, single-flight) ─────────────────────────────── */
+/* ── drive index (cached in memory + on disk, single-flight) ─────────── */
+const fs = require('fs');
+const path = require('path');
+const DISK_CACHE = path.join(__dirname, '..', 'temp', 'papers-index.json');
+
+function readDiskCache() {
+  try {
+    if (fs.existsSync(DISK_CACHE)) {
+      const parsed = JSON.parse(fs.readFileSync(DISK_CACHE, 'utf8'));
+      if (parsed && parsed.index && parsed.index.root && Array.isArray(parsed.index.files)) {
+        return parsed;
+      }
+    }
+  } catch (e) { /* corrupt cache — ignore */ }
+  return null;
+}
+function writeDiskCache(index) {
+  try {
+    fs.mkdirSync(path.dirname(DISK_CACHE), { recursive: true });
+    fs.writeFileSync(DISK_CACHE, JSON.stringify({ at: Date.now(), index }));
+  } catch (e) {
+    console.error('papers: disk cache write failed:', e.message);
+  }
+}
+
 function rootId() {
   return gdrive.extractId(config.GDRIVE_FOLDER_ID);
 }
-async function getIndex() {
+
+/**
+ * Returns { index, degraded, at } — `degraded` means Google Drive could not
+ * be reached right now and a previously saved list is being served instead,
+ * so students keep working during quota/network hiccups or restarts.
+ */
+async function getIndex({ allowStale = true } = {}) {
   const rid = rootId();
   if (!rid) {
     const e = new Error('Past papers are not configured yet.');
     e.code = 'NOT_CONFIGURED';
     throw e;
   }
-  if (cache.index && Date.now() - cache.at < CACHE_TTL) return cache.index;
+  if (cache.index && Date.now() - cache.at < cacheTtlMs()) {
+    return { index: cache.index, degraded: false, at: cache.at };
+  }
   if (cache.building) return cache.building;
-  cache.building = gdrive.buildIndex(rid)
-    .then((index) => { cache = { at: Date.now(), building: null, index }; return index; })
-    .catch((e) => { cache.building = null; throw e; });
+  cache.building = (async () => {
+    try {
+      const index = await gdrive.buildIndex(rid);
+      cache = { at: Date.now(), building: null, index };
+      writeDiskCache(index);
+      return { index, degraded: false, at: cache.at };
+    } catch (e) {
+      cache.building = null;
+      if (allowStale) {
+        if (cache.index) return { index: cache.index, degraded: true, at: cache.at };
+        const disk = readDiskCache();
+        if (disk) return { index: disk.index, degraded: true, at: disk.at };
+      }
+      throw e;
+    }
+  })();
   return cache.building;
 }
 
@@ -136,11 +185,11 @@ function helpLines() {
  * Index paths always start with the root folder name.
  */
 async function resolveView(view) {
-  const index = await getIndex();
+  const { index, degraded } = await getIndex();
 
   if (view.kind === 'search') {
     const items = searchFiles(index, view.query).slice(0, 150);
-    return { title: `🔍 *"${view.query}"* — ${items.length} found`, items, isSearch: true };
+    return { title: `🔍 *"${view.query}"* — ${items.length} found`, items, isSearch: true, degraded };
   }
 
   const names = (view.pathNames && view.pathNames.length)
@@ -156,7 +205,7 @@ async function resolveView(view) {
     ...index.folders.filter(isDirectChildFolder).map((f) => ({ ...f, _folder: true })),
     ...index.files.filter(isDirectFile).map((f) => ({ ...f, _folder: false }))
   ];
-  return { title: `🗂️ *${pathLabel(names)}*`, items, isSearch: false };
+  return { title: `🗂️ *${pathLabel(names)}*`, items, isSearch: false, degraded };
 }
 
 /** Render a resolved view into the list message text. */
@@ -182,6 +231,9 @@ function renderText(resolved, page) {
   });
   text += `\n${helpLines()}`;
   if (pages > 1 && p < pages) text += `\n➡️ Next page: \`${config.PREFIX}papers next\``;
+  if (resolved.degraded) {
+    text += `\n\n⚠️ _Showing a saved copy — Google Drive is unreachable right now, so very new files may be missing._`;
+  }
   return { text, page: p, pages };
 }
 
@@ -290,11 +342,17 @@ cmd({
       const b = browse[from] || { pathIds: [], pathNames: [] };
       return showView(sock, mek, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
     }
+    if (query === 'refresh') {
+      if (!isBoss) return reply('⛔ Owner only.');
+      cache = { at: 0, building: null, index: null };
+      const res = await getIndex({ allowStale: false });
+      return reply(`🔄 Papers list refreshed — *${res.index.files.length}* files in *${res.index.folders.length}* folders.`);
+    }
 
     // a folder name (top-level or inside the current folder) always wins —
     // papers are usually sorted in folders like "2021", which look like page
     // numbers. Only fall back to page-jumping when no folder matches.
-    const index = await getIndex();
+    const index = (await getIndex()).index;
     const last = lastList[from];
     const cur = browse[from] || { pathNames: [] };
     const curNames = cur.pathNames.length ? cur.pathNames : [index.root.name];
@@ -382,7 +440,7 @@ cmd({
       if (matches.length === 1) entry = matches[0];
     }
     if (!entry) {
-      const index = await getIndex();
+      const index = (await getIndex()).index;
       const matches = searchFiles(index, arg);
       if (matches.length === 0) {
         return reply(`🔍 Nothing matched *"${arg}"*. Try \`${config.PREFIX}papers ${arg}\`.`);

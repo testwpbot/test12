@@ -28,7 +28,8 @@ const SETTINGS = {
   GDRIVE_API_KEY: "",
   GDRIVE_FOLDER_ID: "",
   PAPERS_MAX_SIZE_MB: "95",
-  PAPERS_COOLDOWN_SEC: "30"
+  PAPERS_COOLDOWN_SEC: "30",
+  PAPERS_CACHE_MIN: "10"
 };
 
 /**
@@ -132,6 +133,13 @@ const SETTINGS_META = {
     type: 'text',
     validate: (v) => (/^\d+$/.test(v) && Number(v) <= 600
       ? true : 'Use a number of seconds, e.g. 30.')
+  },
+  PAPERS_CACHE_MIN: {
+    label: 'Papers cache (minutes)',
+    desc: 'How long the saved Drive list stays fresh',
+    type: 'text',
+    validate: (v) => (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 720
+      ? true : 'Use minutes between 1 and 720.')
   }
 };
 

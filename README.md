@@ -33,6 +33,7 @@ overridden with an environment variable of the same name.
 | `GDRIVE_FOLDER_ID` | — | Drive folder (ID or URL) that holds the past papers |
 | `PAPERS_MAX_SIZE_MB` | `95` | Files bigger than this send a browser link instead |
 | `PAPERS_COOLDOWN_SEC` | `30` | Wait required between downloads per student |
+| `PAPERS_CACHE_MIN` | `10` | How long the saved Drive index stays fresh |
 
 `SESSION_ID` and `PORT` are read-only inside the bot (shown masked in the
 settings panel) — set them in `config.js` or as env vars.
@@ -85,9 +86,19 @@ Google Drive** — no admin approval needed:
    ```
 7. Send `.papers` in your group — done 🎉
 
-The index refreshes every 10 minutes, so new files you add to Drive appear
-automatically. Google Docs/Sheets are sent as PDF exports. Files larger than
-`PAPERS_MAX_SIZE_MB` get a browser link instead of an upload.
+The index refreshes every 10 minutes (`PAPERS_CACHE_MIN`), so new files you
+add to Drive appear automatically. Admins can force an immediate refresh with
+`.papers refresh`. Google Docs/Sheets are sent as PDF exports. Files larger
+than `PAPERS_MAX_SIZE_MB` get a browser link instead of an upload.
+
+**Google Drive API limits — will a 100+ group hit them?** No. The Drive API
+allows 1,000,000 quota units/min per project (a folder listing costs 100
+units, a download 200). One full index of ~30 subfolders ≈ 3,000 units and is
+cached, so even a busy class uses a fraction of a percent of quota. The bot
+also keeps a copy of the index on disk (`temp/papers-index.json`): if Google
+Drive is ever unreachable or throttled, students still get the saved list
+(with a small notice) instead of an error, and `.papers refresh` picks up new
+files once the API is back.
 
 ### Keeping the folder private (optional)
 
