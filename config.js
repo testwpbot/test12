@@ -1,13 +1,4 @@
-/**
- * DANUWA-MD — Central configuration
- *
- * ── Everything in the SETTINGS block below is editable at runtime ──
- * The bot owner can run `.settings` in WhatsApp and the new value is written
- * straight back into this file, so it survives a restart.
- *
- * Any setting can also be overridden with an environment variable of the same
- * name (handy on Heroku / Koyeb / Railway / Render).
- */
+
 
 const fs = require('fs');
 const path = require('path');
@@ -15,8 +6,6 @@ const path = require('path');
 const CONFIG_FILE = __filename;
 const ENV_FILE = path.join(__dirname, 'config.env');
 
-// Optional env overrides. "dotenv" is an optional dependency, so never crash
-// when it is missing — just warn and fall back to the values in this file.
 if (fs.existsSync(ENV_FILE)) {
   try {
     require('dotenv').config({ path: ENV_FILE });
@@ -25,13 +14,10 @@ if (fs.existsSync(ENV_FILE)) {
   }
 }
 
-/* ════════════════════════════════════════════════════════════════════
- *  EDITABLE SETTINGS — edit by hand here, or live with `.settings`
- * ════════════════════════════════════════════════════════════════════ */
 const SETTINGS = {
   PREFIX: ".",
   BOT_NAME: "DANUWA-MD",
-  BOT_OWNER: "94774915917",
+  BOT_OWNER: "94776121326",
   LOG_NUMBER: "94776121326",
   ALIVE_MSG: "*Hello👋 DANUWA-MD Is Alive Now😍*",
   ALIVE_IMG: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/DANUWA-MD.png?raw=true",
