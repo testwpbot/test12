@@ -24,7 +24,11 @@ const SETTINGS = {
   AUTO_STATUS_SEEN: "true",
   AUTO_STATUS_REACT: "true",
   BLOCK_CALLS: "true",
-  BLOCK_CALLS_MSG: "📵 Sorry, calls are not allowed on this number. Please send a text message instead."
+  BLOCK_CALLS_MSG: "📵 Sorry, calls are not allowed on this number. Please send a text message instead.",
+  GDRIVE_API_KEY: "",
+  GDRIVE_FOLDER_ID: "",
+  PAPERS_MAX_SIZE_MB: "95",
+  PAPERS_COOLDOWN_SEC: "30"
 };
 
 /**
@@ -102,6 +106,32 @@ const SETTINGS_META = {
     desc: 'Auto-reply to blocked callers (empty = silent)',
     type: 'text',
     validate: (v) => (v.length <= 200 ? true : 'Keep the message under 200 characters.')
+  },
+  GDRIVE_API_KEY: {
+    label: 'Google Drive API key',
+    desc: 'Drive API key for the papers plugin (.papersetup)',
+    type: 'text',
+    validate: (v) => (!v.trim() || v.trim().length >= 20 ? true : 'That API key looks too short.')
+  },
+  GDRIVE_FOLDER_ID: {
+    label: 'Papers folder ID',
+    desc: 'Drive folder ID (or paste the folder URL)',
+    type: 'text',
+    validate: (v) => (!v.trim() || /[A-Za-z0-9_-]{15,}/.test(v) ? true : 'Paste the folder ID or the folder URL.')
+  },
+  PAPERS_MAX_SIZE_MB: {
+    label: 'Max paper size (MB)',
+    desc: 'Bigger files send a browser link instead',
+    type: 'text',
+    validate: (v) => (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 1900
+      ? true : 'Use a number of megabytes, e.g. 95.')
+  },
+  PAPERS_COOLDOWN_SEC: {
+    label: 'Download cooldown (sec)',
+    desc: 'Wait required between downloads per student',
+    type: 'text',
+    validate: (v) => (/^\d+$/.test(v) && Number(v) <= 600
+      ? true : 'Use a number of seconds, e.g. 30.')
   }
 };
 
