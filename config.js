@@ -240,8 +240,19 @@ function logJid() {
 
 /** Is `number` (digits, or a full JID) one of the owners? */
 function isOwner(number) {
-  const n = String(number || '').replace(/[^\d]/g, '');
-  return ownerNumbers().some((owner) => owner === n || owner.endsWith(n) || n.endsWith(owner));
+  const raw = String(number || '').replace(/[^\d]/g, '');
+  // An empty / digit-less value must NEVER match (owner.endsWith('') is true).
+  if (!raw) return false;
+  // Also try without a leading zero (local format, e.g. 0774… → 94774…).
+  const candidates = [...new Set([raw, raw.replace(/^0+/, '')])].filter(Boolean);
+  return ownerNumbers().some((owner) =>
+    candidates.some((n) => {
+      if (owner === n) return true;
+      // Allow matching without country code — but never on tiny fragments.
+      return Math.min(owner.length, n.length) >= 7 &&
+        (owner.endsWith(n) || n.endsWith(owner));
+    })
+  );
 }
 
 /** Hide most of a secret value before showing it in WhatsApp. */

@@ -243,11 +243,19 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
     const q = args.join(' ');
 
     const sender = mek.key.fromMe ? test.user.id : (mek.key.participant || mek.key.remoteJid);
-    const senderNumber = sender.split('@')[0];
+    // Identity used for the owner check: prefer the plain phone-number JID
+    // (participantAlt / remoteJidAlt) when WhatsApp reports a @lid JID, and
+    // strip the ":device" suffix Baileys adds to its own JID.
+    const senderJid = mek.key.fromMe
+      ? test.user.id
+      : (mek.key.participantAlt || mek.key.participantPalt || mek.key.participant ||
+         mek.key.remoteJidAlt || mek.key.remoteJid || '');
+    const senderNumber = String(senderJid).split('@')[0].split(':')[0].replace(/[^\d]/g, '');
     const isGroup = from.endsWith('@g.us');
     const botNumber = test.user.id.split(':')[0];
+    const botNumberDigits = botNumber.split('@')[0].replace(/[^\d]/g, '');
     const pushname = mek.pushName || 'Sin Nombre';
-    const isMe = botNumber.includes(senderNumber);
+    const isMe = senderNumber.length > 0 && senderNumber === botNumberDigits;
     const isOwner = config.isOwner(senderNumber) || isMe;
     const botNumber2 = await jidNormalizedUser(test.user.id);
 
