@@ -37,10 +37,10 @@ const { File } = require('megajs');
 const { commands, replyHandlers } = require('./command');
 
 const app = express();
-const port = process.env.PORT || 8000;
+// PORT is read from config.js (env var override handled there)
 
-const prefix = '.';
-const ownerNumber = ['94776121326'];
+// All owner numbers, prefix, bot name etc. now live in config.js
+// (editable at runtime with the .settings command).
 const credsPath = path.join(__dirname, '/auth_info_baileys/creds.json');
 
 async function ensureSessionFile() {
@@ -82,7 +82,7 @@ global.pluginHooks.push(antiDeletePlugin);
 
 
 async function connectToWA() {
-  console.log("Connecting test-MD 🧬...");
+  console.log(`Connecting ${config.BOT_NAME} 🧬...`);
   const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, '/auth_info_baileys/'));
   const { version } = await fetchLatestBaileysVersion();
 
@@ -104,11 +104,11 @@ async function connectToWA() {
         connectToWA();
       }
     } else if (connection === 'open') {
-      console.log('✅ test-MD connected to WhatsApp');
+      console.log(`✅ ${config.BOT_NAME} connected to WhatsApp`);
 
-      const up = `test-MD connected ✅\n\nPREFIX: ${prefix}`;
-      await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
-        image: { url: `https://github.com/testwpbot/test12/blob/main/images/Danuwa%20-%20MD.png?raw=true` },
+      const up = `${config.BOT_NAME} connected ✅\n\nPREFIX: ${config.PREFIX}`;
+      await test.sendMessage(config.logJid(), {
+        image: { url: config.ALIVE_IMG },
         caption: up
       });
 
@@ -152,7 +152,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
   const senderJid = mek.key.participant || mek.key.remoteJid || "unknown@s.whatsapp.net";
   const mentionJid = senderJid.includes("@s.whatsapp.net") ? senderJid : senderJid + "@s.whatsapp.net";
 
-  if (config.AUTO_STATUS_SEEN === "true") {
+  if (config.isEnabled("AUTO_STATUS_SEEN")) {
     try {
       await test.readMessages([mek.key]);
       console.log(`[✓] Status seen: ${mek.key.id}`);
@@ -161,7 +161,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
     }
   }
 
-  if (config.AUTO_STATUS_REACT === "true" && mek.key.participant) {
+  if (config.isEnabled("AUTO_STATUS_REACT") && mek.key.participant) {
     try {
       const emojis = ['❤️', '💸', '😇', '🍂', '💥', '💯', '🔥', '💫', '💎', '💗', '🤍', '🖤', '👀', '🙌', '🙆', '🚩', '🥰', '💐', '😎', '🤎', '✅', '🫀', '🧡', '😁', '😄', '🌸', '🕊️', '🌷', '⛅', '🌟', '🗿', '💜', '💙', '🌝', '🖤', '💚'];
       const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
@@ -183,7 +183,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
     const text = mek.message.extendedTextMessage.text || "";
     if (text.trim().length > 0) {
       try {
-        await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+        await test.sendMessage(config.logJid(), {
           text: `📝 *Text Status*\n👤 From: @${mentionJid.split("@")[0]}\n\n${text}`,
           mentions: [mentionJid]
         });
@@ -212,7 +212,7 @@ if (mek.key?.remoteJid === 'status@broadcast') {
       const mimetype = mediaMsg.mimetype || (msgType === "imageMessage" ? "image/jpeg" : "video/mp4");
       const captionText = mediaMsg.caption || "";
 
-      await test.sendMessage(ownerNumber[0] + "@s.whatsapp.net", {
+      await test.sendMessage(config.logJid(), {
         [msgType === "imageMessage" ? "image" : "video"]: buffer,
         mimetype,
         caption: `📥 *Forwarded Status*\n👤 From: @${mentionJid.split("@")[0]}\n\n${captionText}`,
@@ -248,7 +248,7 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
     const botNumber = test.user.id.split(':')[0];
     const pushname = mek.pushName || 'Sin Nombre';
     const isMe = botNumber.includes(senderNumber);
-    const isOwner = ownerNumber.includes(senderNumber) || isMe;
+    const isOwner = config.isOwner(senderNumber) || isMe;
     const botNumber2 = await jidNormalizedUser(test.user.id);
 
     const groupMetadata = isGroup ? await test.groupMetadata(from).catch(() => {}) : '';
@@ -316,7 +316,7 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
 ensureSessionFile();
 
 app.get("/", (req, res) => {
-  res.send("Hey, test-MD started✅");
+  res.send(`Hey, ${config.BOT_NAME} started✅`);
 });
 
-app.listen(port, () => console.log(`Server listening on http://localhost:${port}`));
+app.listen(config.PORT, () => console.log(`Server listening on http://localhost:${config.PORT}`));
