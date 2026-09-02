@@ -237,8 +237,8 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
         (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text :
           (type == 'imageMessage' && mek.message.imageMessage.caption) ? mek.message.imageMessage.caption :
             (type == 'videoMessage' && mek.message.videoMessage.caption) ? mek.message.videoMessage.caption : '';
-    const isCmd = body.startsWith(prefix);
-    const commandName = isCmd ? body.slice(prefix.length).trim().split(" ")[0].toLowerCase() : '';
+    const isCmd = body.startsWith(config.PREFIX);
+    const commandName = isCmd ? body.slice(config.PREFIX.length).trim().split(" ")[0].toLowerCase() : '';
     const args = body.trim().split(/ +/).slice(1);
     const q = args.join(' ');
 
