@@ -363,15 +363,18 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
       }
       const counts = resolved.isSearch ? '' :
         ` · ${resolved.items.length} item${resolved.items.length === 1 ? '' : 's'}`;
+      // logo only on the MAIN menu (root folder, first page) — not on every card
+      const isMainMenu = !resolved.isSearch && view.kind === 'folder' &&
+        (!view.pathNames || view.pathNames.length === 0) && p === 1 && !offset;
       return await m.sendButtonMenu({
         title: cardTitle(resolved),
+        ...(isMainMenu ? { image: config.ALIVE_IMG } : {}),
         text:
           `${resolved.title}${counts}  (page ${p}/${pages})\n\n` +
           `💡 Tap a row below, or type \`${config.PREFIX}paper <number>\`\n` +
           `🔍 Search everything: \`${config.PREFIX}papers <words>\`` +
           (resolved.degraded ? '\n\n⚠️ _Saved copy — Drive unreachable right now._' : ''),
         footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
-        image: config.ALIVE_IMG,
         listTitle: listTitleFor(resolved),
         sections
       });
@@ -405,7 +408,7 @@ async function downloadEntry(sock, mek, ctx, entry) {
   const fname = fileNameFor(entry);
   const sizeTxt = entry.size ? ` (${fmtSize(entry.size)})` : '';
   await sock.sendMessage(from, { react: { text: '⏳', key: mek.key } });
-  await reply(`📥 Fetching *${fname}*${sizeTxt} — one moment…`);
+  await reply(`📥 *Downloading* ${fname}${sizeTxt}…\n⏳ Your paper will arrive in this chat shortly.`);
 
   enqueue(async () => {
     try {
@@ -428,7 +431,7 @@ async function downloadEntry(sock, mek, ctx, entry) {
     } catch (e) {
       console.error('❌ paper download failed:', e.message || e);
       await sock.sendMessage(from, { react: { text: '❌', key: mek.key } });
-      await reply(`❌ Couldn't fetch that paper.\n${gdrive.friendlyError(e)}`);
+      await reply(`❌ Download failed — please try again in a moment.\n${gdrive.friendlyError(e)}`);
     }
   });
 }

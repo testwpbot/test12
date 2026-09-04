@@ -137,7 +137,8 @@ const ok = (cond, name, extra) => {
   sent = [];
   await paperCmd.function(sock, mek, {}, ctx({ args: ['2'] }));
   await drain();
-  ok(lastReply().includes('Fetching *Chemistry_PP1.pdf*'), 'ack reply with filename');
+  ok(lastReply().includes('*Downloading* Chemistry_PP1.pdf'), 'ack says Downloading with filename', lastReply());
+  ok(lastReply().includes('arrive in this chat'), 'friendly waiting line');
   ok(reacts().includes('⏳') && reacts().includes('✅'), 'react ⏳ → ✅');
   const doc = docs().find((x) => x.opts && x.opts.quoted);
   ok(doc && doc.content.fileName === 'Chemistry_PP1.pdf' && doc.content.mimetype === 'application/pdf', 'document sent with name+mime');
@@ -235,7 +236,7 @@ const ok = (cond, name, extra) => {
   sent = [];
   await freshPaper.function(sock, mek, {}, ctx({ args: ['Chemistry_PP1'] }));
   await drain();
-  ok(sent.some((s) => s.reply && s.reply.includes("Couldn't fetch") && s.reply.includes('403')), 'outage: download fails friendly');
+  ok(sent.some((s) => s.reply && s.reply.includes('Download failed') && s.reply.includes('403')), 'outage: download fails friendly');
   sent = [];
   await freshPapers.function(sock, mek, {}, ctx({ args: ['refresh'] }));
   ok(lastReply().includes('403'), 'outage: refresh reports real error');
@@ -383,6 +384,18 @@ const ok = (cond, name, extra) => {
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN4@g.us', args: ['chem'] }));
   ok(lastCard && lastCard.listTitle.includes('Pick a result'), 'search: picker says "Pick a result"', lastCard && lastCard.listTitle);
+
+  /* 15f. logo only on the main menu card */
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'LG1@g.us' }));   // main menu (root)
+  ok(lastCard && lastCard.image && String(lastCard.image.url || lastCard.image) === String(config.ALIVE_IMG),
+     'main menu card HAS the logo (ALIVE_IMG)', JSON.stringify(lastCard && lastCard.image));
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'LG2@g.us', args: ['2021'] })); // subfolder
+  ok(lastCard && !lastCard.image, 'subfolder card has NO logo');
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'LG3@g.us', args: ['chem'] })); // search
+  ok(lastCard && !lastCard.image, 'search card has NO logo');
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
