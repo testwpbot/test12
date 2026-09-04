@@ -166,11 +166,11 @@ async function connectToWA() {
         .replaceAll('{name}', name)
         .replaceAll('{group}', groupName || 'the group')
         .replaceAll('{bot}', config.BOT_NAME);
-      await test.sendMessage(groupJid, { text, mentions: [`${digits}@s.whatsapp.net`] });
-      console.log(`👋 Welcomed new member ${name} to ${groupJid}`);
 
-      // The papers hub menu in the SAME message as the greeting: the welcome
-      // text becomes the card body (dropdown = the papers main menu).
+      // ONE welcome message: the papers hub card with the greeting as its
+      // body. Plain text is only the fallback (papers not configured or the
+      // card failed) so a new student always gets greeted exactly once.
+      let cardSent = false;
       try {
         const papers = require('./plugins/papers');
         // NOTE: the synthetic mek must carry a minimal .message — Baileys
@@ -181,14 +181,19 @@ async function connectToWA() {
           pushName: name,
           message: { conversation: 'welcome' }
         };
-        const ok2 = await papers.sendHubCard(test, fakeMek, sms(test, fakeMek), {
+        cardSent = (await papers.sendHubCard(test, fakeMek, sms(test, fakeMek), {
           from: groupJid,
           reply: (t) => test.sendMessage(groupJid, { text: t }, { quoted: fakeMek })
-        }, { customText: text });
-        if (ok2) console.log(`📋 Sent papers menu attached to the welcome for ${name}`);
-        else console.log('ℹ️ Papers not configured — welcome sent without menu');
+        }, { customText: text })) === true;
       } catch (me) {
         console.error('⚠️ welcome menu card failed:', me.message || me);
+      }
+
+      if (cardSent) {
+        console.log(`👋 Welcomed new member ${name} with the papers menu`);
+      } else {
+        await test.sendMessage(groupJid, { text, mentions: [`${digits}@s.whatsapp.net`] });
+        console.log(`👋 Welcomed new member ${name} (text only — papers menu unavailable)`);
       }
     } catch (e) {
       console.error('❌ welcome handler error:', e.message || e);

@@ -556,6 +556,12 @@ const ok = (cond, name, extra) => {
   ok(/message:\s*\{\s*conversation:/.test(fakeBlock), 'welcome fakeMek carries a minimal .message', fakeBlock);
   ok(/sendHubCard/.test(indexSrc) && !/pattern === 'menu'/.test(indexSrc.slice(indexSrc.indexOf('greetMember'))),
      'welcome flow attaches the papers hub (not the main menu)');
+  // only ONE welcome: plain text must be gated behind card failure
+  const greetBlock = indexSrc.slice(indexSrc.indexOf('const greetMember'), indexSrc.indexOf("test.ev.on('group-participants.update'"));
+  ok(greetBlock.includes('if (cardSent)'), 'plain text welcome only when the card fails');
+  const textSendIdx = greetBlock.indexOf('await test.sendMessage(groupJid, { text');
+  const cardIdx = greetBlock.indexOf('sendHubCard');
+  ok(textSendIdx > cardIdx, 'card attempted BEFORE any plain text send');
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
