@@ -167,6 +167,14 @@ function pathLabel(pathNames) {
   return (pathNames || []).join(' / ');
 }
 
+/**
+ * Display name for the papers library in menus/breadcrumbs. Defaults to the
+ * real Drive folder name when PAPERS_ROOT_NAME is empty.
+ */
+function displayName(index) {
+  const custom = String(config.PAPERS_ROOT_NAME || '').trim();
+  return custom || index.root.name;
+}
 function countDirectChildren(index, folderPath) {
   const folders = index.folders.filter((f) =>
     f.path.length === folderPath.length + 1 && folderPath.every((n, i) => f.path[i] === n)).length;
@@ -206,6 +214,7 @@ async function resolveView(view) {
   const names = (view.pathNames && view.pathNames.length)
     ? view.pathNames
     : [index.root.name];
+  const label = [displayName(index), ...names.slice(1)];
 
   const isDirectChildFolder = (f) =>
     f.path.length === names.length + 1 && names.every((n, i) => f.path[i] === n);
@@ -219,7 +228,7 @@ async function resolveView(view) {
     }),
     ...index.files.filter(isDirectFile).map((f) => ({ ...f, _folder: false }))
   ];
-  return { title: `🗂️ *${pathLabel(names)}*`, items, isSearch: false, degraded };
+  return { title: `🗂️ *${pathLabel(label)}*`, items, isSearch: false, degraded };
 }
 
 /* ── text rendering (fallback + full list) ───────────────────────────── */

@@ -81,6 +81,7 @@ Module._load = function (request) {
 process.env.GDRIVE_FOLDER_ID = 'https://drive.google.com/drive/folders/ROOT_FOLDER_ID_123456';
 process.env.GDRIVE_API_KEY = 'AIzaTESTKEY1234567890';
 process.env.PAPERS_COOLDOWN_SEC = '60';
+process.env.PAPERS_ROOT_NAME = 'AI Mate Papers';
 process.env.PAPERS_MAX_SIZE_MB = '95';
 
 const fs = require('fs');
@@ -120,18 +121,18 @@ const ok = (cond, name, extra) => {
   /* 1. root listing */
   await papersCmd.function(sock, mek, {}, ctx());
   let r = lastReply();
-  ok(r.includes('School Papers'), 'root listing shows root name');
+  ok(r.includes('AI Mate Papers'), 'root listing shows root name');
   ok(/1\. 📁 \*2020\*/.test(r) && /2\. 📁 \*2021\*/.test(r), 'folders listed first, numbered', r);
 
   /* 2. folder by name (number-looking names must beat page-jumping) */
   await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
   r = lastReply();
-  ok(r.includes('School Papers / 2021'), '.papers 2021 opens folder', r);
+  ok(r.includes('AI Mate Papers / 2021'), '.papers 2021 opens folder', r);
   ok(/1\. 📁 \*Physics\*/.test(r) && /2\. 📄 Chemistry_PP1\.pdf \(2\.0 MB\)/.test(r), 'subfolder + files with sizes', r);
 
   /* 3. page jump when no folder matches */
   await papersCmd.function(sock, mek, {}, ctx({ args: ['1'] }));
-  ok(lastReply().includes('School Papers / 2021') && /\(page 1\/1\)/.test(lastReply()), 'page jump works when no folder matches');
+  ok(lastReply().includes('AI Mate Papers / 2021') && /\(page 1\/1\)/.test(lastReply()), 'page jump works when no folder matches');
 
   /* 4. download .paper 2 (Chemistry_PP1) */
   sent = [];
@@ -170,11 +171,11 @@ const ok = (cond, name, extra) => {
   /* 8. deep navigation + back/home */
   await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
   await paperCmd.function(sock, mek, {}, ctx({ args: ['1'], senderNumber: '94777000004', sender: '94777000004@s.whatsapp.net' })); // Physics
-  ok(lastReply().includes('School Papers / 2021 / Physics'), 'subfolder breadcrumb', lastReply());
+  ok(lastReply().includes('AI Mate Papers / 2021 / Physics'), 'subfolder breadcrumb', lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ args: ['back'] }));
-  ok(/School Papers \/ 2021\*\s+\(page 1\//.test(lastReply()), 'back goes up one level');
+  ok(/AI Mate Papers \/ 2021\*\s+\(page 1\//.test(lastReply()), 'back goes up one level');
   await papersCmd.function(sock, mek, {}, ctx({ args: ['home'] }));
-  ok(/\(page 1\/1\)/.test(lastReply()) && lastReply().includes('School Papers'), 'home returns to root');
+  ok(/\(page 1\/1\)/.test(lastReply()) && lastReply().includes('AI Mate Papers'), 'home returns to root');
 
   /* 9. invalid item */
   await paperCmd.function(sock, mek, {}, ctx({ args: ['99'], senderNumber: '94777000006', sender: '94777000006@s.whatsapp.net' }));
@@ -231,7 +232,7 @@ const ok = (cond, name, extra) => {
   sent = [];
   await freshPapers.function(sock, mek, {}, ctx());
   r = lastReply();
-  ok(r.includes('School Papers') && r.includes('2021'), 'outage: listing served from disk cache', r);
+  ok(r.includes('AI Mate Papers') && r.includes('2021'), 'outage: listing served from disk cache', r);
   ok(r.includes('saved copy'), 'outage: degraded notice shown');
   sent = [];
   await freshPaper.function(sock, mek, {}, ctx({ args: ['Chemistry_PP1'] }));
@@ -275,7 +276,7 @@ const ok = (cond, name, extra) => {
   // tap flow: open folder 2020 via its row id command
   card = null;
   await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us', args: ['2020'] }));
-  ok(card && card.title.includes('School Papers / 2020'), 'button card for 2020 folder', card && card.title);
+  ok(card && card.title.includes('AI Mate Papers / 2020'), 'button card for 2020 folder', card && card.title);
   const fRows = card && card.sections && card.sections[0].rows;
   ok(fRows && fRows[0] && fRows[0].id === '.paper 1' && /Maths\.pdf/.test(fRows[0].title), 'file row taps .paper 1', JSON.stringify(fRows && fRows[0]));
   const navSec = card && card.sections && card.sections[1];
@@ -335,7 +336,7 @@ const ok = (cond, name, extra) => {
   // smart folder match: 'phy' opens Physics inside 2021
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS4@g.us', args: ['2021'] }));
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS4@g.us', args: ['phy'] }));
-  ok(lastReply().includes('School Papers / 2021 / Physics'), "smart folder match: 'phy' opens Physics", lastReply());
+  ok(lastReply().includes('AI Mate Papers / 2021 / Physics'), "smart folder match: 'phy' opens Physics", lastReply());
 
   // AI expansion (Gemini mock): Sinhala query → english tokens
   process.env.GEMINI_API_KEY = 'AIzaFAKEGEMINIKEY1234567890';
@@ -396,6 +397,22 @@ const ok = (cond, name, extra) => {
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'LG3@g.us', args: ['chem'] })); // search
   ok(lastCard && !lastCard.image, 'search card has NO logo');
+
+  /* 15g. custom library name in menus */
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'RN1@g.us' }));
+  ok(lastCard && lastCard.title.includes('AI Mate Papers'), 'root card shows custom library name', lastCard && lastCard.title);
+  ok(lastCard && !lastCard.title.includes('School Papers'), 'Drive folder name hidden on root card', lastCard && lastCard.title);
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'RN2@g.us', args: ['2021'] }));
+  ok(lastCard && lastCard.title.includes('AI Mate Papers / 2021'), 'breadcrumb uses custom name too', lastCard && lastCard.title);
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'RN3@g.us', args: ['chem'] }));
+  ok(lastReply().includes('AI Mate Papers') === false && lastReply().includes('2 found'), 'search title clean', lastReply());
+  // folder matching still works on REAL names
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'RN4@g.us', args: ['2020'] }));
+  ok(lastReply().includes('AI Mate Papers / 2020'), 'nav works with custom name', lastReply());
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

@@ -30,7 +30,8 @@ const SETTINGS = {
   PAPERS_MAX_SIZE_MB: "95",
   PAPERS_COOLDOWN_SEC: "30",
   PAPERS_CACHE_MIN: "10",
-  GEMINI_API_KEY: ""
+  GEMINI_API_KEY: "",
+  PAPERS_ROOT_NAME: "AI Mate Papers"
 };
 
 /**
@@ -147,6 +148,12 @@ const SETTINGS_META = {
     desc: 'AI-powered smart search for .papers (free at aistudio.google.com)',
     type: 'text',
     validate: (v) => (!v.trim() || v.trim().length >= 20 ? true : 'That API key looks too short.')
+  },
+  PAPERS_ROOT_NAME: {
+    label: 'Papers menu name',
+    desc: 'Shown in the .papers menu instead of the Drive folder name',
+    type: 'text',
+    validate: (v) => (v.length <= 40 ? true : 'Keep it under 40 characters.')
   }
 };
 
