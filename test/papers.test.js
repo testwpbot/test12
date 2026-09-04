@@ -685,6 +685,11 @@ const ok = (cond, name, extra) => {
   ok(lm && lm.sections[0].rows[0].rowId === '.paper 1', 'rowId = command id');
   ok(lm && lm.sections[0].rows[0].title.length <= 72, 'long row titles clamped to protocol limit',
      lm && String(lm.sections[0].rows[0].title.length));
+  const bizNode = relayed && relayed.o && relayed.o.additionalNodes && relayed.o.additionalNodes[0];
+  ok(bizNode && bizNode.tag === 'biz' && bizNode.content[0].tag === 'list'
+     && bizNode.content[0].attrs.type === 'product_list' && bizNode.content[0].attrs.v === '2',
+     'relay carries required <biz> list stanza (else WA silently drops)',
+     JSON.stringify(bizNode && bizNode.content));
   // tap guard: legacy taps are detected too — so bot replies never quote them
   const tap = { message: { listResponseMessage: { singleSelectReply: { selectedRowId: '.paper 1' } } } };
   ok(isTapResponse(tap) === true, 'legacy tap detected (listResponseMessage) — never quoted');
