@@ -81,6 +81,14 @@ const Module = require('module');
 const origLoad = Module._load;
 Module._load = function (request) {
   if (request === 'axios') return axiosStub;
+  if (request === '@whiskeysockets/baileys') {
+    return {
+      proto: { Message: { create: (x) => x }, WebMessageInfo: { fromObject: (x) => x } },
+      downloadContentFromMessage: async function* () {},
+      getContentType: (m) => (m && typeof m === 'object' ? Object.keys(m)[0] : undefined),
+      jidNormalizedUser: (j) => j
+    };
+  }
   if (request === 'gifted-btns') {
     return { sendButtons: async () => {}, sendInteractiveMessage: async () => {} };
   }
@@ -116,12 +124,13 @@ const replies = () => sent.filter((s) => s.reply !== undefined).map((s) => s.rep
 const lastReply = () => replies()[replies().length - 1] || '';
 const docs = () => sent.filter((s) => s.content && s.content.document);
 const reacts = () => sent.filter((s) => s.content && s.content.react).map((s) => s.content.react.text);
-const ctx = (over = {}) => Object.assign({
+const ctx = (over = {}, mekOverride) => Object.assign({
   from: 'GROUP@g.us', args: [], isOwner: true, isMe: false,
   sender: '94777000001@s.whatsapp.net', senderNumber: '94777000001',
   pushname: 'Student', isGroup: true,
   reply: async (t) => { sent.push({ reply: t }); }
 }, over);
+// harness passes the GLOBAL mek by default; tests can call paperCmd with a custom mek directly
 const drain = async () => { for (let i = 0; i < 25; i++) await new Promise((r) => setImmediate(r)); };
 
 let pass = 0, fail = 0;
@@ -630,6 +639,24 @@ const ok = (cond, name, extra) => {
   await np.function(sock, mek, mCard, { from: 'FR@g.us', body: 'papers', sender: A.sender, reply: async (t) => { sent.push({ reply: t }); } });
   ok(lastCard && lastCard.title.includes('AI Mate Papers') && !lastCard.text.includes('/ Physics'),
      "no-prefix 'papers' also resets to the main menu", lastCard && lastCard.title);
+
+  /* 15p. tap responses are never quoted (fixes "not supported" for others) */
+  const { isTapResponse } = require('../lib/msg');
+  ok(isTapResponse({ message: { interactiveResponseMessage: {} } }) === true, 'detector: interactiveResponseMessage');
+  ok(isTapResponse({ message: { listResponseMessage: {} } }) === true, 'detector: listResponseMessage');
+  ok(isTapResponse({ message: { buttonsResponseMessage: {} } }) === true, 'detector: buttonsResponseMessage');
+  ok(isTapResponse({ message: { conversation: 'papers' } }) === false, 'detector: normal text not a tap');
+
+  // end-to-end: student downloads via a BUTTON TAP → document arrives UNQUOTED
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'TAP@g.us', args: ['2021'], sender: '94779999999@s.whatsapp.net' }));
+  const tapMek = { key: { id: 'TAPMSG', remoteJid: 'TAP@g.us', fromMe: false, participant: '94779999999@s.whatsapp.net' }, message: { interactiveResponseMessage: { nativeFlowResponseMessage: {} } } };
+  await paperCmd.function(sock, tapMek, {}, ctx({ from: 'TAP@g.us', args: ['2'], senderNumber: '94779999999', sender: '94779999999@s.whatsapp.net' }));
+  await drain();
+  const tapDoc = docs().find((d) => d.opts !== undefined);
+  ok(!!tapDoc, 'tap download produced a document');
+  ok(tapDoc && tapDoc.opts && tapDoc.opts.quoted === undefined,
+     'document sent via tap is NOT quoted (no unsupported embed for others)', JSON.stringify(tapDoc && tapDoc.opts));
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

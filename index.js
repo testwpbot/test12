@@ -28,7 +28,7 @@ const path = require('path');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./config');
-const { sms, downloadMediaMessage } = require('./lib/msg');
+const { sms, downloadMediaMessage, isTapResponse } = require('./lib/msg');
 const { sendButtons, sendInteractive, sendButtonMenu } = require('./lib/buttons');
 const {
   getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson,
@@ -417,7 +417,9 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
     const isBotAdmins = isGroup ? groupAdmins.includes(botNumber2) : false;
     const isAdmins = isGroup ? groupAdmins.includes(sender) : false;
 
-    const reply = (text) => test.sendMessage(from, { text }, { quoted: mek });
+    // never quote a button/list tap response — other members would see an
+    // unsupported embedded message (see lib/msg.isTapResponse)
+    const reply = (text) => test.sendMessage(from, { text }, isTapResponse(mek) ? {} : { quoted: mek });
 
     if (isCmd) {
       const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));

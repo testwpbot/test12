@@ -19,6 +19,7 @@ const { cmd } = require('../command');
 const config = require('../config');
 const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
+const { isTapResponse } = require('../lib/msg');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
@@ -472,7 +473,7 @@ async function downloadEntry(sock, mek, ctx, entry) {
         mimetype: mimeFor(entry),
         caption,
         ...(isGroup ? { mentions: [sender] } : {})
-      }, { quoted: mek });
+      }, isTapResponse(mek) ? {} : { quoted: mek });   // taps are never quoted (unsupported for others)
       await sock.sendMessage(from, { react: { text: '✅', key: mek.key } });
       console.log(`📚 Sent paper "${fname}" to ${from}`);
     } catch (e) {
