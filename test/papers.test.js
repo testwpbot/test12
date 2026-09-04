@@ -1,0 +1,252 @@
+/**
+ * Self-contained simulation tests for the .papers plugin + lib/gdrive.
+ *
+ * Intercepts require('axios') in-process, so no network and no node_modules
+ * stubbing is needed. Run:  node test/papers.test.js
+ */
+
+/* ── axios interceptor ───────────────────────────────────────────────── */
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const f = (id, name, size) => ({ id, name, mimeType: 'application/pdf', size, isFolder: false });
+const d = (id, name) => ({ id, name, mimeType: FOLDER_MIME, isFolder: true });
+
+const C1 = f('FILECHEM1aaaaaaaaaaaaaa', 'Chemistry_PP1.pdf', 2 * 1024 * 1024);
+const C2 = f('FILECHEM2aaaaaaaaaaaaaa', 'Chemistry_PP2.pdf', 3 * 1024 * 1024);
+const H1 = f('FILEHUGEaaaaaaaaaaaaaaa', 'Huge_Collection.pdf', 200 * 1024 * 1024);
+const P1 = f('FILEPHY1aaaaaaaaaaaaaaa', 'Physics_PP1.pdf', 1.5 * 1024 * 1024);
+const M1 = f('FILEMATH1aaaaaaaaaaaaaa', 'Maths.pdf', 900 * 1024);
+const DOC = { id: 'FILEDOCSaaaaaaaaaaaaaaa', name: 'Syllabus Notes', mimeType: 'application/vnd.google-apps.document' };
+const DP = f('FILEDEEPaaaaaaaaaaaaaaa', 'DEEP_Paper.pdf', 1024 * 1024);
+
+const TREE = {
+  ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021')],
+  FOLDER2021aaaaaaaaaaaaaa: [d('FOLDERPHYaaaaaaaaaaaaaaa', 'Physics'), C1, C2, DOC, H1],
+  FOLDERPHYaaaaaaaaaaaaaaa: [P1],
+  FOLDER2020aaaaaaaaaaaaaa: [M1],
+  FOLDERPHYaaaaaaaaaaaaaaa_: [DP] // unreachable decoy (id not referenced)
+};
+// deep chain: 2021/Physics already above; extend Physics with a subfolder
+TREE.FOLDERPHYaaaaaaaaaaaaaaa = [P1, d('SUBDEEPaaaaaaaaaaaaaaa0', 'VeryDeep')];
+TREE.SUBDEEPaaaaaaaaaaaaaaa0 = [DP];
+
+const META = { ROOT_FOLDER_ID_123456: 'School Papers' };
+
+let OUTAGE = false;
+const axiosStub = {
+  get: async (url, opts = {}) => {
+    if (OUTAGE) {
+      const e = new Error('simulated outage');
+      e.response = { status: 403, data: { error: { code: 403, message: 'quota exceeded', status: 'PERMISSION_DENIED' } } };
+      throw e;
+    }
+    const q = (opts.params && opts.params.q) || '';
+    if (url.endsWith('/drive/v3/files') && q) {
+      for (const k of Object.keys(TREE)) {
+        if (q.includes(k)) return { data: { files: TREE[k].map((x) => ({ id: x.id, name: x.name, mimeType: x.mimeType, size: x.size })) } };
+      }
+      return { data: { files: [] } };
+    }
+    const mE = url.match(/\/files\/([^/]+)\/export/);
+    if (mE) return { data: Buffer.from('EXPORTED_PDF_' + mE[1]) };
+    const mM = url.match(/\/files\/([^/?]+)$/);
+    if (mM && opts.params && opts.params.alt === 'media') return { data: Buffer.from('CONTENT_' + mM[1]) };
+    const mM2 = url.match(/\/drive\/v3\/([^/?]+)$/);
+    if (mM2) return { data: { id: mM2[1], name: META[mM2[1]] || mM2[1], mimeType: FOLDER_MIME } };
+    throw new Error('stub: unhandled GET ' + url);
+  },
+  post: async () => { throw new Error('stub: no OAuth in tests'); }
+};
+
+const Module = require('module');
+const origLoad = Module._load;
+Module._load = function (request) {
+  if (request === 'axios') return axiosStub;
+  return origLoad.apply(this, arguments);
+};
+
+/* ── env + modules under test ────────────────────────────────────────── */
+process.env.GDRIVE_FOLDER_ID = 'https://drive.google.com/drive/folders/ROOT_FOLDER_ID_123456';
+process.env.GDRIVE_API_KEY = 'AIzaTESTKEY1234567890';
+process.env.PAPERS_COOLDOWN_SEC = '60';
+process.env.PAPERS_MAX_SIZE_MB = '95';
+
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+const { commands } = require('../command');
+require('../plugins/papers.js');
+const config = require('../config');
+const gdrive = require('../lib/gdrive');
+
+const papersCmd = commands.find((c) => c.pattern === 'papers');
+const paperCmd = commands.find((c) => c.pattern === 'paper');
+const setupCmd = commands.find((c) => c.pattern === 'papersetup');
+
+let sent = [];
+const sock = { sendMessage: async (jid, content, opts) => { sent.push({ jid, content, opts }); } };
+const mek = { key: { id: 'MSGXYZ', remoteJid: 'GROUP@g.us' } };
+const replies = () => sent.filter((s) => s.reply !== undefined).map((s) => s.reply);
+const lastReply = () => replies()[replies().length - 1] || '';
+const docs = () => sent.filter((s) => s.content && s.content.document);
+const reacts = () => sent.filter((s) => s.content && s.content.react).map((s) => s.content.react.text);
+const ctx = (over = {}) => Object.assign({
+  from: 'GROUP@g.us', args: [], isOwner: true, isMe: false,
+  sender: '94777000001@s.whatsapp.net', senderNumber: '94777000001',
+  pushname: 'Student', isGroup: true,
+  reply: async (t) => { sent.push({ reply: t }); }
+}, over);
+const drain = async () => { for (let i = 0; i < 25; i++) await new Promise((r) => setImmediate(r)); };
+
+let pass = 0, fail = 0;
+const ok = (cond, name, extra) => {
+  if (cond) { pass++; console.log('PASS  ' + name); }
+  else { fail++; console.log('FAIL  ' + name + (extra ? '\n      got: ' + String(extra).slice(0, 300) : '')); }
+};
+
+(async () => {
+  /* 1. root listing */
+  await papersCmd.function(sock, mek, {}, ctx());
+  let r = lastReply();
+  ok(r.includes('School Papers'), 'root listing shows root name');
+  ok(/1\. 📁 \*2020\*/.test(r) && /2\. 📁 \*2021\*/.test(r), 'folders listed first, numbered', r);
+
+  /* 2. folder by name (number-looking names must beat page-jumping) */
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
+  r = lastReply();
+  ok(r.includes('School Papers / 2021'), '.papers 2021 opens folder', r);
+  ok(/1\. 📁 \*Physics\*/.test(r) && /2\. 📄 Chemistry_PP1\.pdf \(2\.0 MB\)/.test(r), 'subfolder + files with sizes', r);
+
+  /* 3. page jump when no folder matches */
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['1'] }));
+  ok(lastReply().includes('School Papers / 2021') && /\(page 1\/1\)/.test(lastReply()), 'page jump works when no folder matches');
+
+  /* 4. download .paper 2 (Chemistry_PP1) */
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['2'] }));
+  await drain();
+  ok(lastReply().includes('Fetching *Chemistry_PP1.pdf*'), 'ack reply with filename');
+  ok(reacts().includes('⏳') && reacts().includes('✅'), 'react ⏳ → ✅');
+  const doc = docs().find((x) => x.opts && x.opts.quoted);
+  ok(doc && doc.content.fileName === 'Chemistry_PP1.pdf' && doc.content.mimetype === 'application/pdf', 'document sent with name+mime');
+  ok(doc && doc.content.document.toString().startsWith('CONTENT_FILECHEM1'), 'buffer came from Drive');
+  ok(doc && doc.content.caption.includes('@94777000001'), 'caption mentions requester');
+
+  /* 5. google-doc export */
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['4'], senderNumber: '94777000002', sender: '94777000002@s.whatsapp.net' }));
+  await drain();
+  const doc2 = docs().find((x) => x.opts && x.opts.quoted);
+  ok(doc2 && doc2.content.fileName === 'Syllabus Notes.pdf' && doc2.content.document.toString().startsWith('EXPORTED_PDF_'), 'google-doc exported as PDF');
+
+  /* 6. oversize → browser link, no upload */
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['5'], senderNumber: '94777000003', sender: '94777000003@s.whatsapp.net' }));
+  ok(lastReply().includes('too big') && lastReply().includes('drive.google.com/file/d/FILEHUGE'), 'oversize gets browser link');
+  ok(docs().length === 0, 'oversize NOT uploaded');
+
+  /* 7. search + deep paths */
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['chemistry'] }));
+  r = lastReply();
+  ok(r.includes('2 found') && r.includes('↳ _2021_'), 'search shows matches + paths', r);
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['physics', 'deep'] }));
+  r = lastReply();
+  ok(r.includes('DEEP_Paper.pdf') && r.includes('↳ _2021 / Physics / VeryDeep_'), 'multi-token search reaches 3 levels deep', r);
+
+  /* 8. deep navigation + back/home */
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['1'], senderNumber: '94777000004', sender: '94777000004@s.whatsapp.net' })); // Physics
+  ok(lastReply().includes('School Papers / 2021 / Physics'), 'subfolder breadcrumb', lastReply());
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['back'] }));
+  ok(/School Papers \/ 2021\*\s+\(page 1\//.test(lastReply()), 'back goes up one level');
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['home'] }));
+  ok(/\(page 1\/1\)/.test(lastReply()) && lastReply().includes('School Papers'), 'home returns to root');
+
+  /* 9. invalid item */
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['99'], senderNumber: '94777000006', sender: '94777000006@s.whatsapp.net' }));
+  ok(lastReply().includes('No item 99'), 'invalid item handled');
+
+  /* 10. download by name */
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['Maths'], senderNumber: '94777000007', sender: '94777000007@s.whatsapp.net' }));
+  await drain();
+  const doc4 = docs().find((x) => x.opts && x.opts.quoted);
+  ok(doc4 && doc4.content.fileName === 'Maths.pdf', '.paper <name> downloads');
+
+  /* 11. setup gating */
+  await setupCmd.function(sock, mek, {}, ctx({ isOwner: true, isMe: true }));
+  ok(lastReply().includes('PAPERS SETUP'), 'setup guide for owner');
+  await setupCmd.function(sock, mek, {}, ctx({ isOwner: false, isMe: false }));
+  ok(lastReply() === '⛔ Owner only.', 'setup denied for strangers');
+
+  /* 12. owner refresh */
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['refresh'], isOwner: true }));
+  ok(/refreshed — \*\d+\* files in \*\d+\* folders/.test(lastReply()), 'owner .papers refresh', lastReply());
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['refresh'], isOwner: false }));
+  ok(lastReply() === '⛔ Owner only.', 'student cannot force refresh');
+
+  /* 13. cooldown (60s from env; every other download used a unique key) */
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['2020'] }));
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94711111111', sender: '94711111111@s.whatsapp.net' })); // open 2020
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94711111111', sender: '94711111111@s.whatsapp.net' })); // download Maths
+  await drain();
+  ok(docs().length > 0, 'cooldown: first download passes');
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94711111111', sender: '94711111111@s.whatsapp.net' }));
+  ok(!docs().length && /wait \d+s/.test(lastReply()), 'cooldown: second blocked', lastReply());
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94722222222', sender: '94722222222@s.whatsapp.net' }));
+  await drain();
+  ok(docs().length > 0, 'cooldown: other student unaffected');
+
+  /* 14. outage: degraded browse from disk cache (fresh state via disk file) */
+  const diskCache = path.join(__dirname, '..', 'temp', 'papers-index.json');
+  assert.ok(fs.existsSync(diskCache), 'disk cache exists from earlier builds');
+  OUTAGE = true;
+  // force cache expiry by wiping in-memory cache through a fresh plugin module
+  delete require.cache[require.resolve('../plugins/papers.js')];
+  delete require.cache[require.resolve('../lib/gdrive')];
+  require('../plugins/papers.js');
+  const papersCmd2 = commands.slice().reverse().find((c) => c.pattern === 'papers' && c !== papersCmd) || commands.find((c) => c.pattern === 'papers');
+  const freshPapers = commands.filter((c) => c.pattern === 'papers').pop();
+  const freshPaper = commands.filter((c) => c.pattern === 'paper').pop();
+  sent = [];
+  await freshPapers.function(sock, mek, {}, ctx());
+  r = lastReply();
+  ok(r.includes('School Papers') && r.includes('2021'), 'outage: listing served from disk cache', r);
+  ok(r.includes('saved copy'), 'outage: degraded notice shown');
+  sent = [];
+  await freshPaper.function(sock, mek, {}, ctx({ args: ['Chemistry_PP1'] }));
+  await drain();
+  ok(sent.some((s) => s.reply && s.reply.includes("Couldn't fetch") && s.reply.includes('403')), 'outage: download fails friendly');
+  sent = [];
+  await freshPapers.function(sock, mek, {}, ctx({ args: ['refresh'] }));
+  ok(lastReply().includes('403'), 'outage: refresh reports real error');
+
+  /* 15. unconfigured states */
+  OUTAGE = false;
+  const gdrive2 = require('../lib/gdrive');   // fresh instance the reloaded plugin uses
+  const realExtract = gdrive2.extractId;
+  gdrive2.extractId = () => '';
+  const unPapers = commands.filter((c) => c.pattern === 'papers').pop();
+  sent = [];
+  await unPapers.function(sock, mek, {}, ctx({ isOwner: false }));
+  ok(lastReply().includes('not set up yet'), 'unconfigured: student note');
+  sent = [];
+  await unPapers.function(sock, mek, {}, ctx({ isOwner: true }));
+  ok(lastReply().includes('papersetup'), 'unconfigured: owner hint');
+  gdrive2.extractId = realExtract;
+
+  /* 16. extractId */
+  assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
+  assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
+  assert.strictEqual(gdrive.extractId('short'), '');
+  ok(true, 'extractId handles URL / bare ID / junk');
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})().catch((e) => { console.error('HARNESS ERROR:', e); process.exit(1); });
