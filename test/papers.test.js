@@ -86,7 +86,11 @@ Module._load = function (request) {
       proto: { Message: { create: (x) => x }, WebMessageInfo: { fromObject: (x) => x } },
       downloadContentFromMessage: async function* () {},
       getContentType: (m) => (m && typeof m === 'object' ? Object.keys(m)[0] : undefined),
-      jidNormalizedUser: (j) => j
+      jidNormalizedUser: (j) => j,
+      generateWAMessageFromContent: (jid, message, opts) => ({
+        key: { id: 'STUBMSG', remoteJid: jid, fromMe: true },
+        message
+      })
     };
   }
   if (request === 'gifted-btns') {
@@ -657,6 +661,33 @@ const ok = (cond, name, extra) => {
   ok(!!tapDoc, 'tap download produced a document');
   ok(tapDoc && tapDoc.opts && tapDoc.opts.quoted === undefined,
      'document sent via tap is NOT quoted (no unsupported embed for others)', JSON.stringify(tapDoc && tapDoc.opts));
+
+  /* 15q. legacy list format — tap bubbles render everywhere */
+  const { sendButtonMenu, sendLegacyList } = require('../lib/buttons');
+  let relayed = null;
+  const legacySock = { user: { id: '9477:s.whatsapp.net' }, relayMessage: async (jid, message, o) => { relayed = { jid, message, o }; } };
+  const longTitle = 'Very_Long_Combined_Maths_Structured_Essay_Paper_2021_GCE_AL_New_Syllabus_File.pdf';
+  await sendButtonMenu(legacySock, 'LG@g.us', {
+    title: '📚 AI Mate Papers',
+    text: 'body text',
+    footer: 'AI Mate Assistant',
+    image: 'https://example.com/logo.jpeg',   // must be dropped silently
+    listTitle: '📂 Open a folder…',
+    sections: [{ title: 'Items', rows: [
+      { id: '.paper 1', title: `1. ${longTitle}`, description: 'File · 4.0 MB — download' }
+    ] }]
+  }, { quoted: { key: { id: 'Q' }, message: { conversation: 'x' } } });
+  const lm = relayed && relayed.message && relayed.message.listMessage;
+  ok(!!lm, 'dropdowns relay as legacy listMessage', JSON.stringify(relayed && Object.keys(relayed.message)));
+  ok(lm && lm.buttonText === '📂 Open a folder…', 'button label = listTitle', lm && lm.buttonText);
+  ok(lm && lm.listType === 1, 'SINGLE_SELECT list type');
+  ok(lm && lm.description === 'body text' && lm.title === '📚 AI Mate Papers', 'title/body carried');
+  ok(lm && lm.sections[0].rows[0].rowId === '.paper 1', 'rowId = command id');
+  ok(lm && lm.sections[0].rows[0].title.length <= 72, 'long row titles clamped to protocol limit',
+     lm && String(lm.sections[0].rows[0].title.length));
+  // tap guard: legacy taps are detected too — so bot replies never quote them
+  const tap = { message: { listResponseMessage: { singleSelectReply: { selectedRowId: '.paper 1' } } } };
+  ok(isTapResponse(tap) === true, 'legacy tap detected (listResponseMessage) — never quoted');
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
