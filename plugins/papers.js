@@ -879,6 +879,13 @@ cmd({
       const sq = smart.parsePaperQuery(norm);
       if (sq && (sq.subject || sq.hasMediumNoun)) return true;
 
+      // FREE-FORM: any short message mentioning papers ("i want 2020 A/L
+      // chemistry past paper") or a year + subject ("2019 chemistry") goes
+      // to the AI brain — it decides if it's a real request.
+      if (tokens.length <= 12 && tokens.some((t) => TRIGGER_WORDS.has(t))) return true;
+      if (tokens.length <= 8 && tokens.some((t) => /^\d{4}$/.test(t)) &&
+          tokens.some((t) => isKnownWord(t.replace(/\//g, '')))) return true;
+
       // "papers …" — next/prev/home/back/numbers/queries
       if (tokens[0] === 'papers') {
         const rest = tokens.slice(1);
@@ -955,7 +962,56 @@ cmd({
       return directPaperRequest(sock, mek, m, ctx, parsed);
     }
 
-    // any other papers-ish text → teach the Year + Subject + Medium format
+    // AI-FIRST: the Gemini brain interprets ANY free-form message using the
+    // real library structure (years + subjects from the Drive index), then
+    // the bot does the actual lookup — AI can never invent files.
+    let index = null;
+    try { index = (await getIndex()).index; } catch (e) { /* fall back below */ }
+    if (index) {
+      const interp = await smart.aiInterpret(ctx.body, index);
+      if (interp && interp.action === 'find') {
+        if (interp.year && interp.subject && interp.medium) {
+          return directPaperRequest(sock, mek, m, ctx, interp);
+        }
+        const parts = [interp.year,
+          interp.subject && SUBJECTS[interp.subject].label,
+          interp.medium && MEDIUMS[interp.medium].label].filter(Boolean);
+        const res = smart.searchIndex(index, parts.join(' '));
+        if (res.items.length > 0) {
+          return sendPickCard(sock, mek, m, ctx, {
+            title: `📚 *${parts.join(' ')}* — ${res.items.length} found`,
+            items: res.items.slice(0, 150), isSearch: true, degraded: false
+          }, '📥 Pick a paper…');
+        }
+        return ctx.reply(
+          `❌ *Paper not found:* ${parts.join(' ')}\n` +
+          `That combination isn't in the library yet.\n` +
+          `💡 Send *papers* to browse 📂`
+        );
+      }
+      if (interp && interp.action === 'search') {
+        const res = smart.searchIndex(index, interp.keywords);
+        if (res.items.length > 0) {
+          return showView(sock, mek, m, ctx, { kind: 'search', query: interp.keywords, original: ctx.body, ai: true }, 1);
+        }
+        return ctx.reply(
+          `🔍 *No papers found* 🤔\n` +
+          `💡 Try the short style: *2019 chem sinhala*\n` +
+          `💡 Or send *papers* to browse 📂`
+        );
+      }
+      // action 'none' / unusable → local fallback decides below
+    }
+
+    // LOCAL FALLBACK (keys exhausted, AI down, or AI unsure): search with
+    // just the meaningful words — years, subjects, "al"
+    const rest = tokens
+      .filter((t) => !TRIGGER_WORDS.has(t) && !smart.STOPWORDS.has(t))
+      .filter((t) => /^\d{4}$/.test(t) || t === 'al' || isKnownWord(t.replace(/\//g, '')));
+    if (rest.length >= 1 && rest.length <= 4) {
+      return papersCommand.function(sock, mek, m, pass({ args: rest }));
+    }
+    // nothing usable at all → teach the format
     return usageGuide(ctx);
   } catch (e) {
     console.error('papers no-prefix handler error:', e.message || e);

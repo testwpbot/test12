@@ -26,11 +26,13 @@ const A16SIN = f('FILE16AG4aaaaaaaaaaaaaa', '2016_Agriculture_Sinhala.pdf', 1024
 const B16MCQ = f('FILE16BI1aaaaaaaaaaaaaa', '2016_Biology_MCQ_Sinhala.pdf', 1024 * 1024);
 const B16ESS = f('FILE16BI2aaaaaaaaaaaaaa', '2016_Biology_Structured_Sinhala.pdf', 1024 * 1024);
 
+const CHEM20 = f('FILE20CH1aaaaaaaaaaaaaa', '2020_Chemistry_Sinhala_Medium.pdf', 1024 * 1024);
+
 const TREE = {
   ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021'), d('FOLDER2016aaaaaaaaaaaaaa', '2016'), d('FOLDEREMPTYaaaaaaaaaaaaa', 'Empty')],
   FOLDER2021aaaaaaaaaaaaaa: [d('FOLDERPHYaaaaaaaaaaaaaaa', 'Physics'), C1, C2, DOC, H1, LONG],
   FOLDERPHYaaaaaaaaaaaaaaa: [P1],
-  FOLDER2020aaaaaaaaaaaaaa: [M1],
+  FOLDER2020aaaaaaaaaaaaaa: [M1, CHEM20],
   FOLDER2016aaaaaaaaaaaaaa: [d('FOLDERAG16aaaaaaaaaaaaaaa', 'Agriculture'), d('FOLDERBI16aaaaaaaaaaaaaaa', 'Biology')],
   FOLDERAG16aaaaaaaaaaaaaaa: [A16MCQ, A16ESS, A16ENG, A16SIN],
   FOLDERBI16aaaaaaaaaaaaaaa: [B16MCQ, B16ESS],
@@ -90,7 +92,8 @@ const axiosStub = {
         e.response = { status: 429, data: { error: { code: 429, message: 'RESOURCE_EXHAUSTED: quota exceeded' } } };
         throw e;
       }
-      return { data: { candidates: [{ content: { parts: [{ text: global.AI_EXPANSION || 'chemistry 2021' }] } }] } };
+      const body = global.AI_INTERPRET != null ? global.AI_INTERPRET : (global.AI_EXPANSION || 'chemistry 2021');
+      return { data: { candidates: [{ content: { parts: [{ text: body }] } }] } };
     }
     throw new Error('stub: no OAuth in tests');
   }
@@ -209,7 +212,7 @@ const ok = (cond, name, extra) => {
   /* 7. search + deep paths */
   await papersCmd.function(sock, mek, {}, ctx({ args: ['chemistry'] }));
   r = lastReply();
-  ok(r.includes('2 found') && r.includes('↳ _2021_'), 'search shows matches + paths', r);
+  ok(r.includes('3 found') && r.includes('↳ _2021_'), 'search shows matches + paths', r);
   await papersCmd.function(sock, mek, {}, ctx({ args: ['physics', 'deep'] }));
   r = lastReply();
   ok(r.includes('DEEP_Paper.pdf') && r.includes('↳ _2021 / Physics / VeryDeep_'), 'multi-token search reaches 3 levels deep', r);
@@ -330,7 +333,7 @@ const ok = (cond, name, extra) => {
   ok(card && card.sections && card.sections.length === 1,
      'subfolder card is LIST-ONLY (no navigation section)', JSON.stringify(card && card.sections.map((s) => s.title)));
   const fRows2 = card && card.sections && card.sections[0].rows;
-  ok(fRows2 && fRows2.length === 1 && fRows2.every((rw) => /^\.paper \d+$/.test(rw.id)),
+  ok(fRows2 && fRows2.length === 2 && fRows2.every((rw) => /^\.paper \d+$/.test(rw.id)),
      'all rows are item rows only', JSON.stringify(fRows2));
   ok(fRows && fRows[0] && fRows[0].description.includes('download'), 'file row offers download');
 
@@ -372,13 +375,13 @@ const ok = (cond, name, extra) => {
   // synonyms / prefixes / typos / stopwords
   sent = [];
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['chem'] }));
-  ok(lastReply().includes('2 found') && lastReply().includes('Chemistry_PP1.pdf'), "synonym: 'chem' → chemistry", lastReply());
+  ok(lastReply().includes('3 found') && lastReply().includes('Chemistry_PP1.pdf'), "synonym: 'chem' → chemistry", lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['phy', 'pp1'] }));
   ok(lastReply().includes('Physics_PP1.pdf'), "prefix: 'phy pp1' → physics paper", lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['phisics'] }));
   ok(lastReply().includes('Physics_PP1.pdf') || lastReply().includes('1 found'), "typo: 'phisics' → physics", lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['past', 'papers', 'chemistry'] }));
-  ok(lastReply().includes('2 found'), 'stopwords ignored in search', lastReply());
+  ok(lastReply().includes('3 found'), 'stopwords ignored in search', lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['chemistry', 'zzzqq'] }));
   r = lastReply();
   ok(r.includes('loose match') && r.includes('Chemistry_PP1.pdf'), 'loose-match fallback flags + finds', r);
@@ -451,7 +454,58 @@ const ok = (cond, name, extra) => {
   smart.geminiReset();
   global.AI_CALLS = 0;
   await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP8@g.us', args: ['chem'] }));
-  ok(global.AI_CALLS === 0 && lastReply().includes('2 found'), 'local hit → zero AI calls', String(global.AI_CALLS));
+  ok(global.AI_CALLS === 0 && lastReply().includes('3 found'), 'local hit → zero AI calls', String(global.AI_CALLS));
+  delete process.env.GEMINI_API_KEY;
+  smart.geminiReset();
+
+  /* 15v. AI-FIRST free-form brain — "i want 2020 A/L chemistry past paper" */
+  process.env.GEMINI_API_KEY = 'AIzaFREEFORM99999999999999';
+  smart.geminiReset();
+  const npFF = require('../command').replyHandlers.find((h) => h.noPrefixTriggers === true);
+  const fFF = (t) => npFF.filter(t, { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } } });
+  ok(fFF('i want 2020 A/L chemistry past paper') === true, 'trigger: free-form request admitted');
+  ok(fFF('give me a chemistry paper') === true, 'trigger: casual paper ask admitted');
+  // find → exact paper pick card (AI saw the real library structure)
+  let ffCard = null;
+  const ffM = { sendButtonMenu: async (payload) => { ffCard = payload; } };
+  global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":"sinhala"}';
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'FF1@g.us', body: 'i want 2020 A/L chemistry past paper', sender: '94778111111@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
+     "free-form 'i want 2020 A/L chemistry past paper' → exact paper card", JSON.stringify(ffCard && ffCard.sections));
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'FF1@g.us', args: ['1'], sender: '94778111111@s.whatsapp.net' }));
+  await drain();
+  ok(docs().some((d) => d.content.fileName && d.content.fileName.includes('2020_Chemistry_Sinhala')),
+     'tapping the AI-found paper downloads it', JSON.stringify(docs().map((d) => d.content.fileName)));
+  // find with missing medium → keyword search fallback card
+  global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":null}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FF2@g.us', body: '2020 chemistry paper', reply: async (t) => { sent.push({ reply: t }); } });
+  ok((ffCard && ffCard.text.includes('found')) || sent.map((s) => s.reply).join('').includes('found'),
+     'partial find (no medium) → search results', JSON.stringify(ffCard && ffCard.text));
+  // search action
+  global.AI_INTERPRET = '{"action":"search","keywords":"chemistry"}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FF3@g.us', body: 'give me a chemistry paper', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.text.includes('3 found'), "AI search action → results card", ffCard && ffCard.text.slice(0, 80));
+  // none → usage guide (chat, not a request)
+  global.AI_INTERPRET = '{"action":"none"}';
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'FF4@g.us', body: 'this paper is hard', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.map((s) => s.reply).join('').includes('How to ask'), "AI 'none' → usage guide reply", sent.map((s) => s.reply).join('').slice(0, 80));
+  // AI down → local keyword fallback still answers
+  global.AI_DOWN = true;
+  delete global.AI_INTERPRET;
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FF5@g.us', body: 'i want 2020 chemistry past paper', reply: async (t) => { sent.push({ reply: t }); } });
+  ok((ffCard && ffCard.text.includes('found')) || sent.map((s) => s.reply).join('').includes('2020_Chemistry'),
+     'AI down → local fallback finds 2020 chemistry', JSON.stringify(ffCard && ffCard.text));
+  global.AI_DOWN = false;
   delete process.env.GEMINI_API_KEY;
   smart.geminiReset();
 
@@ -510,7 +564,7 @@ const ok = (cond, name, extra) => {
      'breadcrumb uses custom name (in body, no duplicate header)', lastCard && lastCard.text.slice(0, 100));
   sent = [];
   await papersCmd.function(sock, mek, {}, ctx({ from: 'RN3@g.us', args: ['chem'] }));
-  ok(lastReply().includes('AI Mate Papers') === false && lastReply().includes('2 found'), 'search title clean', lastReply());
+  ok(lastReply().includes('AI Mate Papers') === false && lastReply().includes('3 found'), 'search title clean', lastReply());
   // folder matching still works on REAL names
   sent = [];
   await papersCmd.function(sock, mek, {}, ctx({ from: 'RN4@g.us', args: ['2020'] }));
@@ -529,40 +583,38 @@ const ok = (cond, name, extra) => {
   ok(f('chemistry') === true, "trigger: bare subject 'chemistry'");
   ok(f('phy') === true, "trigger: bare subject 'phy'");
   ok(f('hello how are you') === false, "ignores normal chat");
-  ok(f('this paper is hard') === false, "ignores sentences mentioning paper (4+ extra words)", 'checked');
+  ok(f('this paper is hard') === true, 'paper-mentioning chatter triggers — the AI brain decides');
   ok(f('.papers') === false, "ignores prefixed commands");
   ok(f('papers', { message: { key: { fromMe: true, remoteJid: 'G@g.us' } } }) === false, 'ignores bot own messages');
   ok(f('papers', { message: { key: { fromMe: false, remoteJid: 'status@broadcast' } } }) === false, 'ignores status broadcast');
   ok(f('https://evil.com papers') === false, 'ignores messages with links');
   ok(f('chemistry, past papers!') === true, 'punctuation tolerated');
   ok(f('paper 2') === true, "trigger: 'paper 2' (download item)");
-  ok(f('paper hello') === false, "'paper hello' ignored (unknown word)");
+  ok(f('paper hello') === true, "'paper hello' triggers — AI brain decides");
   ok(f('papers next') === true, "trigger: 'papers next'");
   ok(f('papers 2021') === true, "trigger: 'papers 2021'");
-  ok(f('papers foo bar baz qux') === false, "'papers' + 4 junk words ignored");
-  ok(f('paper is hard') === false, "'paper is hard' ignored");
+  ok(f('papers foo bar baz qux') === true, "'papers' + junk words → AI decides");
+  ok(f('paper is hard') === true, "'paper is hard' triggers — AI brain decides");
 
   // full flow: 'papers' opens the main menu card
   lastCard = null;
   await np.function(sock, mek, mCard, { from: 'NP@g.us', body: 'papers', reply: async (t) => { sent.push({ reply: t }); } });
   ok(lastCard && lastCard.title.includes('AI Mate Papers'), "typing 'papers' opens main menu card", lastCard && lastCard.title);
-  // 'chemistry past papers' → usage guide (structured format is the only
-  // paper path now); NO card, just text teaching Year + Subject + Medium
+  // 'chemistry past papers' (AI not configured) → LOCAL fallback search
+  // still answers with results — the old format engine is the fallback now
   sent = [];
   lastCard = null;
   await np.function(sock, mek, mCard, { from: 'NP2@g.us', body: 'chemistry past papers', reply: async (t) => { sent.push({ reply: t }); } });
-  const guide = sent.map((s) => s.reply).join('\n');
-  ok(guide.includes('Year + Subject + Medium') && guide.includes('2016 chemistry sinhala medium'),
-     "'chemistry past papers' gets the usage guide with example", guide.slice(0, 120));
-  ok(lastCard === null, 'guide is plain text, not a card');
+  ok((lastCard && lastCard.text.includes('3 found')) || sent.map((s) => s.reply).join('').includes('3 found'),
+     "AI-unconfigured 'chemistry past papers' → local fallback results", JSON.stringify(lastCard && lastCard.text));
 
   /* 15r. structured requests — "2016 agriculture sinhala medium" */
   ok(f('2016 chemistry sinhala medium') === true, "trigger: '2016 chemistry sinhala medium'");
   ok(f('2022 physics english') === true, "trigger: '2022 physics english' (medium word optional)");
   ok(f('2021 combined maths sinhala mediam') === true, 'trigger: multi-word subject + typo medium');
   ok(f('2016 xyzabc sinhala medium') === true, 'trigger: year+medium but unknown subject → guide');
-  ok(f('2016 xyzabc sinhala') === false, 'unknown subject and no medium word → no trigger');
-  ok(f('2021 chem') === false, 'year+subject without medium → no trigger');
+  ok(f('2016 xyzabc sinhala') === true, 'year + medium-ish ask triggers — AI decides');
+  ok(f('2021 chem') === true, 'year+subject without medium triggers — AI fills the gaps');
 
   // filename classifier: strict year token, variant detection
   const cf = require('../lib/papersearch').classifyFileName;
