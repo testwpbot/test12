@@ -295,9 +295,11 @@ const ok = (cond, name, extra) => {
      'second-level card: no header title, breadcrumb only in body', JSON.stringify({ t: card && card.title, x: card && card.text.slice(0, 80) }));
   const fRows = card && card.sections && card.sections[0].rows;
   ok(fRows && fRows[0] && fRows[0].id === '.paper 1' && /Maths\.pdf/.test(fRows[0].title), 'file row taps .paper 1', JSON.stringify(fRows && fRows[0]));
-  const navSec = card && card.sections && card.sections[1];
-  ok(navSec && navSec.rows.some((r) => r.id === '.papers home') && navSec.rows.some((r) => r.id === '.papers back'),
-     'subfolder card has Home + Back buttons', JSON.stringify(navSec));
+  ok(card && card.sections && card.sections.length === 1,
+     'subfolder card is LIST-ONLY (no navigation section)', JSON.stringify(card && card.sections.map((s) => s.title)));
+  const fRows2 = card && card.sections && card.sections[0].rows;
+  ok(fRows2 && fRows2.length === 1 && fRows2.every((rw) => /^\.paper \d+$/.test(rw.id)),
+     'all rows are item rows only', JSON.stringify(fRows2));
   ok(fRows && fRows[0] && fRows[0].description.includes('download'), 'file row offers download');
 
   // prev / more subcommands
@@ -466,6 +468,8 @@ const ok = (cond, name, extra) => {
   await np.function(sock, mek, mCard, { from: 'NP2@g.us', body: 'chemistry past papers', reply: async (t) => { sent.push({ reply: t }); } });
   ok(lastCard && lastCard.text.includes('chemistry') && lastCard.listTitle.includes('Pick a result'),
      "'chemistry past papers' shows search results card", lastCard && lastCard.text.slice(0, 80));
+  ok(lastCard && lastCard.sections.length === 1,
+     'search card is LIST-ONLY too', JSON.stringify(lastCard && lastCard.sections.map((s) => s.title)));
 
   // reaction + delegation: 'papers' reacts to the student's message
   sent = [];

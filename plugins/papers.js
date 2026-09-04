@@ -23,7 +23,7 @@ const smart = require('../lib/papersearch');
 /* ── tunables ────────────────────────────────────────────────────────── */
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
 const PAGE_SIZE = 30;                    // entries per text list message
-const BUTTON_ROWS = 8;                   // entries per dropdown card window
+const BUTTON_ROWS = 10;                  // entries per dropdown (WhatsApp row cap)
 const MAX_ACTIVE_DOWNLOADS = 2;          // parallel uploads to WhatsApp
 const DEFAULT_MAX_MB = 95;
 const DEFAULT_COOLDOWN = 30;             // seconds between downloads per user
@@ -321,21 +321,8 @@ function buildRows(resolved, page, offset, view) {
     };
   });
 
-  const navRows = [];
-  const depth = view && Array.isArray(view.pathNames) ? view.pathNames.length : 0;
-  if (!resolved.isSearch && depth > 0) {
-    navRows.push({ id: `${config.PREFIX}papers back`, title: '⬆️ Back', description: 'Up one folder' });
-  }
-  if (!resolved.isSearch && depth > 0) {
-    navRows.push({ id: `${config.PREFIX}papers home`, title: '🏠 Home', description: 'All folders' });
-  }
-  if (p > 1) navRows.push({ id: `${config.PREFIX}papers prev`, title: '⬅️ Previous page', description: `Page ${p - 1} of ${pages}` });
-  if (windowStart + BUTTON_ROWS < resolved.items.length && windowStart + BUTTON_ROWS < pageStart + PAGE_SIZE) {
-    navRows.push({ id: `${config.PREFIX}papers more ${windowStart + BUTTON_ROWS}`, title: '➡️ More in this page', description: `Items ${windowStart + BUTTON_ROWS + 1}–${Math.min(windowStart + 2 * BUTTON_ROWS, pageStart + PAGE_SIZE)} of this page` });
-  }
-  if (p < pages) navRows.push({ id: `${config.PREFIX}papers next`, title: '📄 Next page', description: `Page ${p + 1} of ${pages}` });
-  if (resolved.isSearch) navRows.push({ id: `${config.PREFIX}papers`, title: '🗂️ Browse folders', description: 'Open the folder browser' });
-  return { itemRows, navRows, page: p, pages };
+  // list only — no navigation / pagination buttons
+  return { itemRows, page: p, pages };
 }
 
 /** Contextual label for the list button, matching what the rows offer. */
@@ -393,13 +380,16 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
   // Interactive card when the bot core supports it, text fallback otherwise.
   if (m && typeof m.sendButtonMenu === 'function') {
     try {
-      const { itemRows, navRows } = buildRows(resolved, p, offset, view);
+      const { itemRows } = buildRows(resolved, p, offset, view);
       const sections = [];
       if (itemRows.length) sections.push({ title: '📂 Items — tap to open/download', rows: itemRows });
-      if (navRows.length) sections.push({ title: '🧭 Navigation', rows: navRows });
       if (!sections.length) {
         return ctx.reply(bodyText);
       }
+      const hidden = resolved.items.length - itemRows.length;
+      const moreHint = hidden > 0
+        ? `\n📄 …and ${hidden} more — type \`${pfx()}papers next\``
+        : '';
       const counts = resolved.isSearch ? '' :
         ` · ${resolved.items.length} item${resolved.items.length === 1 ? '' : 's'}`;
       // logo only on the MAIN menu (root folder, first page) — not on every card
@@ -413,7 +403,7 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
         text: custom ||
           `${resolved.title}${counts}  (page ${p}/${pages})\n\n` +
           `💡 Tap a row below, or type \`${pfx()}paper <number>\`\n` +
-          `🔍 Search everything: \`${pfx()}papers <words>\`` +
+          `🔍 Search everything: \`${pfx()}papers <words>\`${moreHint}` +
           (resolved.degraded ? '\n\n⚠️ _Saved copy — Drive unreachable right now._' : ''),
         footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
         listTitle: listTitleFor(resolved),
