@@ -20,7 +20,7 @@ const SETTINGS = {
   BOT_OWNER: "94776121326",
   LOG_NUMBER: "94776121326",
   ALIVE_MSG: "*👋 AI Mate Assistant is online — send .papers for past papers! 📚*",
-  ALIVE_IMG: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/DANUWA-MD.png?raw=true",
+  ALIVE_IMG: "https://github.com/testwpbot/test12/blob/arena/01a06247-test12/images/ai-mate-logo.jpeg?raw=true",
   AUTO_STATUS_SEEN: "true",
   AUTO_STATUS_REACT: "true",
   BLOCK_CALLS: "true",
