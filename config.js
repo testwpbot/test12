@@ -17,6 +17,8 @@ if (fs.existsSync(ENV_FILE)) {
 const SETTINGS = {
   PREFIX: ".",
   BOT_NAME: "AI Mate Assistant",
+  BRAND_SITE: "almate.edu.lk",
+  BRAND_CONTACT: "https://wa.me/94722002009?text=Start",
   BOT_OWNER: "94776121326",
   LOG_NUMBER: "94776121326",
   ALIVE_MSG: "*👋 AI Mate Assistant is online — send .papers for past papers! 📚*",

@@ -193,6 +193,8 @@ const ok = (cond, name, extra) => {
   ok(doc && doc.content.fileName === 'Chemistry_PP1.pdf' && doc.content.mimetype === 'application/pdf', 'document sent with name+mime');
   ok(doc && doc.content.document.toString().startsWith('CONTENT_FILECHEM1'), 'buffer came from Drive');
   ok(doc && doc.content.caption.includes('@94777000001'), 'caption mentions requester');
+  ok(doc && doc.content.caption.includes('almate.edu.lk') && doc.content.caption.includes('wa.me/94722002009?text=Start'),
+     'caption carries website + contact links', doc && doc.content.caption.split('\n').slice(-4).join(' | '));
 
   /* 5. google-doc export (fresh chat → fresh cooldown window) */
   sent = [];

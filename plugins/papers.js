@@ -477,6 +477,8 @@ async function downloadEntry(sock, mek, ctx, entry) {
         `┃ 📄 *${fname}*\n` +
         (isGroup ? `┃ 👤 Requested by @${senderNumber}\n` : '') +
         `╰━━━━━━━━━━━━━━━━━━━┈\n` +
+        `🌐 ${config.BRAND_SITE}\n` +
+        `💬 ${config.BRAND_CONTACT}\n` +
         `_🤖 ${config.BOT_NAME} • ask me for more anytime!_`;
       await sock.sendMessage(from, {
         document: buf,
