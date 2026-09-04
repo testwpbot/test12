@@ -16,10 +16,10 @@ if (fs.existsSync(ENV_FILE)) {
 
 const SETTINGS = {
   PREFIX: ".",
-  BOT_NAME: "DANUWA-MD",
+  BOT_NAME: "AI Mate Assistant",
   BOT_OWNER: "94776121326",
   LOG_NUMBER: "94776121326",
-  ALIVE_MSG: "*Hello👋 DANUWA-MD Is Alive Now😍*",
+  ALIVE_MSG: "*👋 AI Mate Assistant is online — send .papers for past papers! 📚*",
   ALIVE_IMG: "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/DANUWA-MD.png?raw=true",
   AUTO_STATUS_SEEN: "true",
   AUTO_STATUS_REACT: "true",

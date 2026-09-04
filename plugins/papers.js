@@ -1,17 +1,18 @@
 /**
  * .papers / .paper — download past papers from the bot owner's Google Drive.
  *
- * Students in the group can browse and download papers without any admin:
- *   .papers                     → browse the papers folder (numbered list)
+ * Professional UI: interactive single-select cards with tappable folders,
+ * files and navigation. Every row id is a ready-made text command, so the
+ * whole plugin also works 100% by typing:
+ *
+ *   .papers                     → open the papers hub (button card)
  *   .papers <words>             → search, e.g. `.papers chemistry 2021`
- *   .papers next | 2            → more pages
+ *   .papers next | prev | more  → paging
  *   .papers back | home         → folder navigation
  *   .paper <number>             → open folder n / download file n
  *   .paper <words>              → download by name
+ *   .papers refresh             → owner: force a re-index
  *   .papersetup                 → owner-only setup guide
- *
- * Setup (owner): .papersetup — needs GDRIVE_API_KEY + GDRIVE_FOLDER_ID in
- * .settings, or a service-account JSON for a private folder (see README).
  */
 
 const { cmd } = require('../command');
@@ -20,7 +21,8 @@ const gdrive = require('../lib/gdrive');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
-const PAGE_SIZE = 30;                    // entries per list message
+const PAGE_SIZE = 30;                    // entries per text list message
+const BUTTON_ROWS = 8;                   // entries per dropdown card window
 const MAX_ACTIVE_DOWNLOADS = 2;          // parallel uploads to WhatsApp
 const DEFAULT_MAX_MB = 95;
 const DEFAULT_COOLDOWN = 30;             // seconds between downloads per user
@@ -129,11 +131,15 @@ async function getIndex({ allowStale = true } = {}) {
 function fmtSize(bytes) {
   if (!bytes && bytes !== 0) return '';
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 function cleanName(name) {
   return String(name || 'file').replace(/[/\\]/g, '_').slice(0, 120);
+}
+function shortName(name, limit = 24) {
+  const n = cleanName(name);
+  return n.length <= limit ? n : `${n.slice(0, limit - 1)}…`;
 }
 function isGoogleDoc(entry) {
   return !!(entry.mimeType && entry.mimeType.startsWith('application/vnd.google-apps'));
@@ -170,8 +176,15 @@ function searchFiles(index, query) {
   const tokens = String(query).toLowerCase().split(/\s+/).filter(Boolean);
   return index.files.filter((f) => tokens.every((t) => matchText(f).includes(t)));
 }
+function countDirectChildren(index, folderPath) {
+  const folders = index.folders.filter((f) =>
+    f.path.length === folderPath.length + 1 && folderPath.every((n, i) => f.path[i] === n)).length;
+  const files = index.files.filter((f) =>
+    f.path.length === folderPath.length && folderPath.every((n, i) => f.path[i] === n)).length;
+  return { folders, files };
+}
 
-/* ── view resolution + rendering ─────────────────────────────────────── */
+/* ── view resolution ─────────────────────────────────────────────────── */
 function helpLines() {
   return (
     `📥 Download: \`${config.PREFIX}paper <number>\`\n` +
@@ -189,7 +202,7 @@ async function resolveView(view) {
 
   if (view.kind === 'search') {
     const items = searchFiles(index, view.query).slice(0, 150);
-    return { title: `🔍 *"${view.query}"* — ${items.length} found`, items, isSearch: true, degraded };
+    return { title: `🔍 *" ${view.query}"* — ${items.length} found`, items, isSearch: true, degraded };
   }
 
   const names = (view.pathNames && view.pathNames.length)
@@ -202,45 +215,98 @@ async function resolveView(view) {
     f.path.length === names.length && names.every((n, i) => f.path[i] === n);
 
   const items = [
-    ...index.folders.filter(isDirectChildFolder).map((f) => ({ ...f, _folder: true })),
+    ...index.folders.filter(isDirectChildFolder).map((f) => {
+      const c = countDirectChildren(index, f.path);
+      return { ...f, _folder: true, _childCount: c.folders + c.files };
+    }),
     ...index.files.filter(isDirectFile).map((f) => ({ ...f, _folder: false }))
   ];
   return { title: `🗂️ *${pathLabel(names)}*`, items, isSearch: false, degraded };
 }
 
-/** Render a resolved view into the list message text. */
+/* ── text rendering (fallback + full list) ───────────────────────────── */
 function renderText(resolved, page) {
   const pages = Math.max(1, Math.ceil(resolved.items.length / PAGE_SIZE));
   const p = Math.min(Math.max(1, page || 1), pages);
   const start = (p - 1) * PAGE_SIZE;
   const slice = resolved.items.slice(start, start + PAGE_SIZE);
 
-  let text = `📚 *PAST PAPERS*\n${resolved.title}  (page ${p}/${pages})\n\n`;
-  if (slice.length === 0) text += '_No files found here._\n';
+  let text = `╭━━━〔 📚 *PAST PAPERS* 〕━━━┈\n┃ ${resolved.title}  (page ${p}/${pages})\n┃\n`;
+  if (slice.length === 0) text += '┃ _No files found here._\n';
   slice.forEach((it, i) => {
     const n = start + i + 1;
     if (it._folder) {
-      text += `${n}. 📁 *${cleanName(it.name)}*\n`;
+      const c = it._childCount ? ` (${it._childCount})` : '';
+      text += `┃ ${n}. 📁 *${cleanName(it.name)}*${c}\n`;
     } else {
       const size = it.size ? ` (${fmtSize(it.size)})` : '';
       const where = resolved.isSearch && it.path.length > 1
-        ? `\n     ↳ _${pathLabel(it.path.slice(1))}_`
+        ? `\n┃     ↳ _${pathLabel(it.path.slice(1))}_`
         : '';
-      text += `${n}. 📄 ${cleanName(it.name)}${size}${where}\n`;
+      text += `┃ ${n}. 📄 ${cleanName(it.name)}${size}${where}\n`;
     }
   });
-  text += `\n${helpLines()}`;
-  if (pages > 1 && p < pages) text += `\n➡️ Next page: \`${config.PREFIX}papers next\``;
+  text += `╰━━━━━━━━━━━━━━━━━━━┈\n\n${helpLines()}`;
   if (resolved.degraded) {
-    text += `\n\n⚠️ _Showing a saved copy — Google Drive is unreachable right now, so very new files may be missing._`;
+    text += '\n\n⚠️ _Showing a saved copy — Google Drive is unreachable right now, so very new files may be missing._';
   }
   return { text, page: p, pages };
 }
 
-async function showView(sock, mek, { from, reply }, view, page) {
+/* ── interactive card rows (buttons UI) ──────────────────────────────── */
+function buildRows(resolved, page, offset, view) {
+  const pages = Math.max(1, Math.ceil(resolved.items.length / PAGE_SIZE));
+  const p = Math.min(Math.max(1, page || 1), pages);
+  const pageStart = (p - 1) * PAGE_SIZE;
+  const windowStart = pageStart + Math.max(0, offset || 0);
+  const slice = resolved.items.slice(windowStart, windowStart + BUTTON_ROWS);
+
+  const itemRows = slice.map((it, i) => {
+    const n = windowStart + i + 1;
+    if (it._folder) {
+      const c = it._childCount ? ` · ${it._childCount} items` : '';
+      return {
+        id: `${config.PREFIX}paper ${n}`,
+        title: `📁 ${shortName(it.name)}`,
+        description: `Folder — open${c}`
+      };
+    }
+    const size = it.size ? ` · ${fmtSize(it.size)}` : '';
+    const where = resolved.isSearch && it.path.length > 1 ? ` · ${it.path[it.path.length - 1]}` : '';
+    const kind = isGoogleDoc(it) ? 'Docs → PDF' : 'File';
+    return {
+      id: `${config.PREFIX}paper ${n}`,
+      title: `${n}. ${shortName(it.name)}`,
+      description: `${kind}${size} — download${where}`
+    };
+  });
+
+  const navRows = [];
+  const depth = view && Array.isArray(view.pathNames) ? view.pathNames.length : 0;
+  if (!resolved.isSearch && depth > 0) {
+    navRows.push({ id: `${config.PREFIX}papers back`, title: '⬆️ Back', description: 'Up one folder' });
+  }
+  if (!resolved.isSearch && depth > 0) {
+    navRows.push({ id: `${config.PREFIX}papers home`, title: '🏠 Home', description: 'All folders' });
+  }
+  if (p > 1) navRows.push({ id: `${config.PREFIX}papers prev`, title: '⬅️ Previous page', description: `Page ${p - 1} of ${pages}` });
+  if (windowStart + BUTTON_ROWS < resolved.items.length && windowStart + BUTTON_ROWS < pageStart + PAGE_SIZE) {
+    navRows.push({ id: `${config.PREFIX}papers more ${windowStart + BUTTON_ROWS}`, title: '➡️ More in this page', description: `Items ${windowStart + BUTTON_ROWS + 1}–${Math.min(windowStart + 2 * BUTTON_ROWS, pageStart + PAGE_SIZE)} of this page` });
+  }
+  if (p < pages) navRows.push({ id: `${config.PREFIX}papers next`, title: '📄 Next page', description: `Page ${p + 1} of ${pages}` });
+  if (resolved.isSearch) navRows.push({ id: `${config.PREFIX}papers`, title: '🗂️ Browse folders', description: 'Open the folder browser' });
+  return { itemRows, navRows, page: p, pages };
+}
+
+function cardTitle(resolved) {
+  const t = resolved.title.replace(/\*/g, '');
+  return t.length > 55 ? `📚 ${t.slice(0, 52)}…` : `📚 ${t}`;
+}
+
+async function showView(sock, mek, m, ctx, view, page, offset = 0) {
   const resolved = await resolveView(view);
   const { text, page: p, pages } = renderText(resolved, page);
-  lastList[from] = {
+  lastList[ctx.from] = {
     view,
     title: resolved.title,
     items: resolved.items,
@@ -248,7 +314,36 @@ async function showView(sock, mek, { from, reply }, view, page) {
     pages,
     at: Date.now()
   };
-  return reply(text);
+
+  // Interactive card when the bot core supports it, text fallback otherwise.
+  if (m && typeof m.sendButtonMenu === 'function') {
+    try {
+      const { itemRows, navRows } = buildRows(resolved, p, offset, view);
+      const sections = [];
+      if (itemRows.length) sections.push({ title: '📂 Items — tap to open/download', rows: itemRows });
+      if (navRows.length) sections.push({ title: '🧭 Navigation', rows: navRows });
+      if (!sections.length) {
+        return ctx.reply(text);
+      }
+      const counts = resolved.isSearch ? '' :
+        ` · ${resolved.items.length} item${resolved.items.length === 1 ? '' : 's'}`;
+      return await m.sendButtonMenu({
+        title: cardTitle(resolved),
+        text:
+          `${resolved.title}${counts}  (page ${p}/${pages})\n\n` +
+          `💡 Tap a row below, or type \`${config.PREFIX}paper <number>\`\n` +
+          `🔍 Search everything: \`${config.PREFIX}papers <words>\`` +
+          (resolved.degraded ? '\n\n⚠️ _Saved copy — Drive unreachable right now._' : ''),
+        footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+        image: config.ALIVE_IMG,
+        listTitle: '📂 Open…',
+        sections
+      });
+    } catch (e) {
+      console.error('papers: button card failed, falling back to text:', e.message);
+    }
+  }
+  return ctx.reply(text);
 }
 
 /* ── download ────────────────────────────────────────────────────────── */
@@ -279,7 +374,12 @@ async function downloadEntry(sock, mek, ctx, entry) {
   enqueue(async () => {
     try {
       const buf = await gdrive.downloadFile(entry);
-      const caption = `📚 *${fname}*\n${isGroup ? `👤 @${senderNumber}\n` : ''}_Shared via ${config.BOT_NAME} 🎓_`;
+      const caption =
+        `╭━━━〔 📚 *PAST PAPER* 〕━━━┈\n` +
+        `┃ 📄 *${fname}*\n` +
+        (isGroup ? `┃ 👤 Requested by @${senderNumber}\n` : '') +
+        `╰━━━━━━━━━━━━━━━━━━━┈\n` +
+        `_🤖 ${config.BOT_NAME} • ask me for more anytime!_`;
       await sock.sendMessage(from, {
         document: buf,
         fileName: fname,
@@ -319,7 +419,7 @@ cmd({
 
     if (arg0 === 'home') {
       delete browse[from];
-      return showView(sock, mek, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
+      return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
     }
     if (arg0 === 'back') {
       const b = browse[from];
@@ -328,25 +428,35 @@ cmd({
       }
       b.pathIds.pop();
       b.pathNames.pop();
-      return showView(sock, mek, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
+      return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
     }
-
+    if (arg0 === 'prev') {
+      const last = lastList[from];
+      if (!last || last.page <= 1) return reply(`ℹ️ Already on the first page.`);
+      return showView(sock, mek, m, ctx, last.view, last.page - 1);
+    }
     if (arg0 === 'next') {
       const last = lastList[from];
       if (!last) return reply(`ℹ️ Nothing to page — send \`${config.PREFIX}papers\` first.`);
-      return showView(sock, mek, ctx, last.view, last.page + 1);
+      return showView(sock, mek, m, ctx, last.view, last.page + 1);
+    }
+    if (arg0 === 'more') {
+      const last = lastList[from];
+      const off = parseInt(args[1] || '0', 10);
+      if (!last || !Number.isFinite(off)) return reply(`ℹ️ Nothing to extend — send \`${config.PREFIX}papers\` first.`);
+      return showView(sock, mek, m, ctx, last.view, last.page, off);
+    }
+    if (arg0 === 'refresh') {
+      if (!isBoss) return reply('⛔ Owner only.');
+      cache = { at: 0, building: null, index: null };
+      const res = await getIndex({ allowStale: false });
+      return reply(`🔄 Papers list refreshed — *${res.index.files.length}* files in *${res.index.folders.length}* folders.`);
     }
 
     const query = args.join(' ').trim();
     if (!query) {
       const b = browse[from] || { pathIds: [], pathNames: [] };
-      return showView(sock, mek, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
-    }
-    if (query === 'refresh') {
-      if (!isBoss) return reply('⛔ Owner only.');
-      cache = { at: 0, building: null, index: null };
-      const res = await getIndex({ allowStale: false });
-      return reply(`🔄 Papers list refreshed — *${res.index.files.length}* files in *${res.index.folders.length}* folders.`);
+      return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
     }
 
     // a folder name (top-level or inside the current folder) always wins —
@@ -364,17 +474,17 @@ cmd({
       const inside = hit.path.length === 2
         ? { pathIds: [hit.id], pathNames: [...hit.path] }
         : (() => {
-            const ids = [...(browse[from]?.pathIds || [])];
-            if (ids[ids.length - 1] !== hit.id) ids.push(hit.id);
-            return { pathIds: ids, pathNames: [...hit.path] };
-          })();
+          const ids = [...(browse[from]?.pathIds || [])];
+          if (ids[ids.length - 1] !== hit.id) ids.push(hit.id);
+          return { pathIds: ids, pathNames: [...hit.path] };
+        })();
       browse[from] = inside;
-      return showView(sock, mek, ctx, { kind: 'folder', pathIds: [...inside.pathIds], pathNames: [...inside.pathNames] }, 1);
+      return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...inside.pathIds], pathNames: [...inside.pathNames] }, 1);
     }
     if (/^\d+$/.test(query) && last && parseInt(query, 10) <= last.pages) {
-      return showView(sock, mek, ctx, last.view, parseInt(query, 10));
+      return showView(sock, mek, m, ctx, last.view, parseInt(query, 10));
     }
-    return showView(sock, mek, ctx, { kind: 'search', query }, 1);
+    return showView(sock, mek, m, ctx, { kind: 'search', query }, 1);
   } catch (e) {
     console.error('papers list error:', e.message || e);
     if (e && e.code === 'NOT_CONFIGURED') {
@@ -404,7 +514,7 @@ cmd({
 
     const arg = args.join(' ').trim();
     if (!arg) {
-      return reply(`❓ Usage:\n\`${config.PREFIX}papers\` — see the list\n\`${config.PREFIX}paper 3\` — download item 3`);
+      return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
     }
 
     const last = lastList[from];
@@ -423,7 +533,7 @@ cmd({
           pathIds: [...cur.pathIds, entry.id],
           pathNames: [...(entry.path || [...cur.pathNames, entry.name])]
         };
-        return showView(sock, mek, ctx, {
+        return showView(sock, mek, m, ctx, {
           kind: 'folder',
           pathIds: [...browse[from].pathIds],
           pathNames: [...browse[from].pathNames]
@@ -443,7 +553,7 @@ cmd({
       const index = (await getIndex()).index;
       const matches = searchFiles(index, arg);
       if (matches.length === 0) {
-        return reply(`🔍 Nothing matched *"${arg}"*. Try \`${config.PREFIX}papers ${arg}\`.`);
+        return reply(`🔍 Nothing matched *" ${arg}"*. Try \`${config.PREFIX}papers ${arg}\`.`);
       }
       if (matches.length > 1) {
         let text = `🔍 *${matches.length}* papers matched — be more specific:\n\n`;
@@ -482,16 +592,16 @@ cmd({
     `*3.* Credentials → *Create credentials → API key*\n` +
     `*4.* In Google Drive: right-click your papers folder → Share → *Anyone with the link → Viewer*\n` +
     `*5.* Copy the folder ID from its URL: drive.google.com/drive/folders/` +
-    "`<THIS_PART>`\n" +
+    '`<THIS_PART>`\n' +
     `*6.* Send these two commands:\n` +
     `\`${config.PREFIX}settings set GDRIVE_API_KEY AIza…\`\n` +
     `\`${config.PREFIX}settings set GDRIVE_FOLDER_ID <folder id or URL>\`\n` +
     `*7.* Test with \`${config.PREFIX}papers\` 🎉\n\n` +
-    `_Want the folder private instead? Use a Google Cloud *service account*: save its JSON as gdrive-service-account.json in the bot folder and share the papers folder with the service account's e-mail as Viewer — no API key needed. See README.md._`
+    `_Want the folder private instead? Use a Google Cloud *service account*: save its JSON as gdrive-service-account.json in the bot folder (or the GOOGLE_SERVICE_ACCOUNT_JSON secret on GitHub Actions) and share the papers folder with the service account's e-mail as Viewer — no API key needed. See README.md._`
   );
 });
 
 module.exports = {
-  resolveView, renderText, getIndex, downloadEntry, enqueue,
+  resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
   fmtSize, cleanName, mimeFor, fileNameFor, searchFiles
 };

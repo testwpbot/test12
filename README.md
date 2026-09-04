@@ -1,4 +1,7 @@
-# DANUWA-MD
+# AI Mate Assistant 🎓
+
+> Educational WhatsApp assistant — browse and download past papers, right from
+> your study group. Built on the DANUWA-MD core ([Baileys](https://github.com/WhiskeySockets/Baileys)).
 
 WhatsApp bot built with [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys).
 
@@ -20,10 +23,10 @@ overridden with an environment variable of the same name.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `PREFIX` | `.` | Character every command starts with |
-| `BOT_NAME` | `DANUWA-MD` | Name used in menus and logs |
+| `BOT_NAME` | `AI Mate Assistant` | Name used in menus and logs |
 | `BOT_OWNER` | `94774915917` | **Your** number — the only one allowed to use `.settings` |
 | `LOG_NUMBER` | `94776121326` | Receives the startup ping and forwarded statuses (also an owner) |
-| `ALIVE_MSG` | `Hello👋 DANUWA-MD Is Alive Now😍` | Reply text for `.alive` |
+| `ALIVE_MSG` | `👋 AI Mate Assistant is online…` | Reply text for `.alive` |
 | `ALIVE_IMG` | image URL | Image used by `.alive` and the startup ping |
 | `AUTO_STATUS_SEEN` | `true` | Auto-mark contacts' statuses as seen |
 | `AUTO_STATUS_REACT` | `true` | Auto-react with a random emoji to statuses |

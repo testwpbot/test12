@@ -246,6 +246,46 @@ const ok = (cond, name, extra) => {
   ok(lastReply().includes('papersetup'), 'unconfigured: owner hint');
   gdrive2.extractId = realExtract;
 
+  /* 15b. interactive button card (professional UI) */
+  let card = null;
+  const mWithButtons = {
+    sendButtonMenu: async (payload) => { card = payload; }
+  };
+  // with buttons available: pass m through — handlers receive m as 3rd arg
+  sent = [];
+  await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us' }));
+  ok(card && card.title && card.title.includes('📚'), 'button card sent with title', JSON.stringify(card && card.title));
+  ok(card && card.text.includes('Tap a row'), 'card invites tapping');
+  ok(card && card.footer.includes('AI Mate Assistant'), 'card footer shows new bot name', card && card.footer);
+  const rows = card && card.sections && card.sections[0] && card.sections[0].rows;
+  ok(rows && rows[0] && rows[0].id === '.paper 1' && /📁/.test(rows[0].title), 'folder row taps .paper 1', JSON.stringify(rows && rows[0]));
+  ok(rows && rows[0] && typeof rows[0].description === 'string' && rows[0].description.includes('Folder'), 'folder row describes itself');
+  // root card: items only (root IS home) — nav section appears in subfolders
+  ok(card && card.sections && card.sections.length >= 1, 'root card has an items section');
+
+  // tap flow: open folder 2020 via its row id command
+  card = null;
+  await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us', args: ['2020'] }));
+  ok(card && card.title.includes('School Papers / 2020'), 'button card for 2020 folder', card && card.title);
+  const fRows = card && card.sections && card.sections[0].rows;
+  ok(fRows && fRows[0] && fRows[0].id === '.paper 1' && /Maths\.pdf/.test(fRows[0].title), 'file row taps .paper 1', JSON.stringify(fRows && fRows[0]));
+  const navSec = card && card.sections && card.sections[1];
+  ok(navSec && navSec.rows.some((r) => r.id === '.papers home') && navSec.rows.some((r) => r.id === '.papers back'),
+     'subfolder card has Home + Back buttons', JSON.stringify(navSec));
+  ok(fRows && fRows[0] && fRows[0].description.includes('download'), 'file row offers download');
+
+  // prev / more subcommands
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'BT2@g.us', args: ['prev'] }));
+  ok(lastReply().includes('Already on the first page'), '.papers prev at page 1', lastReply());
+  card = null;
+  await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us', args: ['more', '0'] }));
+  ok(card && card.sections, '.papers more renders a card');
+
+  /* 15c. bot rename */
+  ok(config.BOT_NAME === 'AI Mate Assistant', 'BOT_NAME is AI Mate Assistant', config.BOT_NAME);
+  ok(String(config.ALIVE_MSG).includes('AI Mate Assistant'), 'ALIVE_MSG renamed');
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
