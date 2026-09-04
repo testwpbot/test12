@@ -516,6 +516,14 @@ const ok = (cond, name, extra) => {
   // unusable entry
   ok(participantInfo({ admin: null }).digits === '', 'unusable participant -> no digits');
 
+  /* 15k. welcome synthetic mek must carry a message (Baileys quoted crash) */
+  // Baileys (rc.14 messages.js:568) reads quoted.message when sending
+  // interactive cards; an empty synthetic mek crashed gifteds/baileys with
+  // "Cannot read properties of undefined (reading 'undefined')".
+  const indexSrc = require('fs').readFileSync('/home/user/test12/index.js', 'utf8');
+  const fakeBlock = indexSrc.slice(indexSrc.indexOf('const fakeMek'), indexSrc.indexOf('};', indexSrc.indexOf('const fakeMek')));
+  ok(/message:\s*\{\s*conversation:/.test(fakeBlock), 'welcome fakeMek carries a minimal .message', fakeBlock);
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

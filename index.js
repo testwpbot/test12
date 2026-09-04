@@ -173,9 +173,13 @@ async function connectToWA() {
       try {
         const menuCmd = commands.find((c) => c.pattern === 'menu');
         if (menuCmd) {
+          // NOTE: must carry a minimal .message — Baileys reads quoted.message
+          // when sending interactive cards, and an empty body crashes it
+          // ("Cannot read properties of undefined (reading 'undefined')").
           const fakeMek = {
             key: { remoteJid: groupJid, fromMe: false, id: `WELCOME-${Date.now()}`, participant: participantJid },
-            pushName: name
+            pushName: name,
+            message: { conversation: 'welcome' }
           };
           await menuCmd.function(test, fakeMek, sms(test, fakeMek), {
             from: groupJid,
