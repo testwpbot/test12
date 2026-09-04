@@ -31,7 +31,8 @@ const config = require('./config');
 const { sms, downloadMediaMessage } = require('./lib/msg');
 const { sendButtons, sendInteractive, sendButtonMenu } = require('./lib/buttons');
 const {
-  getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson
+  getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson,
+  participantInfo
 } = require('./lib/functions');
 const { File } = require('megajs');
 const { commands, replyHandlers } = require('./command');
@@ -143,11 +144,12 @@ async function connectToWA() {
 
   // Greet one new member. Fired from BOTH the participants event and the
   // group "added" notification message, whichever arrives first.
-  const greetMember = async (groupJid, participantJid) => {
+  const greetMember = async (groupJid, participantJid, resolvedDigits) => {
     try {
       if (!groupJid || !String(groupJid).endsWith('@g.us')) return;
       if (!config.isEnabled('WELCOME_NEW_MEMBERS')) return;
-      const digits = String(participantJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      const digits = resolvedDigits ||
+        String(participantJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
       if (!digits) return;
       const botDigits = String(test.user.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
       if (digits === botDigits) return;                      // never greet the bot itself
@@ -176,7 +178,14 @@ async function connectToWA() {
       if (!update) return;
       console.log(`👥 group-participants.update: ${update.action} in ${update.id} (${(update.participants || []).join(', ')})`);
       if (update.action !== 'add' || !Array.isArray(update.participants)) return;
-      for (const jid of update.participants) await greetMember(update.id, jid);
+      for (const p of update.participants) {
+        const info = participantInfo(p);   // rc.9 sends objects, old versions strings
+        if (!info.digits) {
+          console.log('⚠️ welcome: could not resolve digits for participant', JSON.stringify(p));
+          continue;
+        }
+        await greetMember(update.id, info.jid || p, info.digits);
+      }
     } catch (e) {
       console.error('❌ welcome handler error:', e.message || e);
     }
@@ -234,11 +243,17 @@ async function connectToWA() {
     if (mek && Number(mek.messageStubType) === 27 &&
         Array.isArray(mek.messageStubParameters) && mek.messageStubParameters[0] &&
         String(mek.key?.remoteJid || '').endsWith('@g.us')) {
-      await greetMember(mek.key.remoteJid, mek.messageStubParameters[0]);
+      for (const raw of mek.messageStubParameters) {
+        let p = raw;
+        try { p = JSON.parse(raw); } catch (e) { /* plain JID on older versions */ }
+        const info = participantInfo(p);
+        if (info.digits) await greetMember(mek.key.remoteJid, info.jid || raw, info.digits);
+      }
     }
     if (!mek || !mek.message) return;
     if (mek.pushName && mek.key && !mek.key.fromMe) {
-      rememberName(mek.key.participant || mek.key.remoteJid, mek.pushName);
+      rememberName(mek.key.participant, mek.pushName);
+      rememberName(mek.key.participantAlt, mek.pushName);
     }
     mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
    

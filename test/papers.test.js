@@ -74,6 +74,12 @@ const Module = require('module');
 const origLoad = Module._load;
 Module._load = function (request) {
   if (request === 'axios') return axiosStub;
+  if (request === 'gifted-btns') {
+    return { sendButtons: async () => {}, sendInteractiveMessage: async () => {} };
+  }
+  if (request === 'form-data') {
+    return class FormData {};
+  }
   return origLoad.apply(this, arguments);
 };
 
@@ -489,6 +495,24 @@ const ok = (cond, name, extra) => {
      'welcome template fills name/group/bot', tpl);
   ok(config.WELCOME_MSG.length <= 120 && /\{name\}/.test(config.WELCOME_MSG) && /papers/i.test(config.WELCOME_MSG),
      'default welcome is short & points to papers', config.WELCOME_MSG);
+
+  /* 15j. participantInfo — Baileys rc.9 welcome bug regression */
+  const { participantInfo } = require('../lib/functions');
+  // rc.9 shape: {id: lid, phoneNumber: pn, lid: pn-lid, admin}
+  const rc9 = participantInfo({ id: '9988776655@lid', phoneNumber: '94771234567@s.whatsapp.net', lid: '94771234567.0:11@s.whatsapp.net', admin: null });
+  ok(rc9.digits === '94771234567', 'rc.9 object: digits from phoneNumber', JSON.stringify(rc9));
+  ok(rc9.jid === '94771234567@s.whatsapp.net', 'rc.9 object: mention jid = phone JID', JSON.stringify(rc9));
+  // lid-only object (no phoneNumber attr)
+  const lidOnly = participantInfo({ id: '9988776655@lid', admin: null });
+  ok(lidOnly.digits === '9988776655' && lidOnly.jid === '9988776655@lid', 'lid-only object falls back to lid', JSON.stringify(lidOnly));
+  // old Baileys shape: plain JID string
+  const legacy = participantInfo('94771234567@s.whatsapp.net');
+  ok(legacy.digits === '94771234567' && legacy.jid === '94771234567@s.whatsapp.net', 'legacy string JID works');
+  // stub param JSON string shape
+  const stubParam = participantInfo(JSON.parse(JSON.stringify({ id: '9988776655@lid', phoneNumber: '94771234567@s.whatsapp.net' })));
+  ok(stubParam.digits === '94771234567', 'stub JSON param resolves');
+  // unusable entry
+  ok(participantInfo({ admin: null }).digits === '', 'unusable participant -> no digits');
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
