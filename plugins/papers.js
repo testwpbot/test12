@@ -331,7 +331,7 @@ function cardTitle(resolved) {
   return t.length > 55 ? `📚 ${t.slice(0, 52)}…` : `📚 ${t}`;
 }
 
-async function showView(sock, mek, m, ctx, view, page, offset = 0) {
+async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
   const resolved = await resolveView(view);
 
   // empty result → simple text message (no interactive card), and keep any
@@ -356,6 +356,8 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
   }
 
   const { text, page: p, pages } = renderText(resolved, page);
+  const custom = (opts && opts.customText) ? String(opts.customText) : '';
+  const bodyText = custom || text;
   lastList[ctx.from] = {
     view,
     title: resolved.title,
@@ -373,7 +375,7 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
       if (itemRows.length) sections.push({ title: '📂 Items — tap to open/download', rows: itemRows });
       if (navRows.length) sections.push({ title: '🧭 Navigation', rows: navRows });
       if (!sections.length) {
-        return ctx.reply(text);
+        return ctx.reply(bodyText);
       }
       const counts = resolved.isSearch ? '' :
         ` · ${resolved.items.length} item${resolved.items.length === 1 ? '' : 's'}`;
@@ -383,7 +385,7 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
       return await m.sendButtonMenu({
         title: cardTitle(resolved),
         ...(isMainMenu ? { image: config.ALIVE_IMG } : {}),
-        text:
+        text: custom ||
           `${resolved.title}${counts}  (page ${p}/${pages})\n\n` +
           `💡 Tap a row below, or type \`${pfx()}paper <number>\`\n` +
           `🔍 Search everything: \`${pfx()}papers <words>\`` +
@@ -396,7 +398,23 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
       console.error('papers: button card failed, falling back to text:', e.message);
     }
   }
-  return ctx.reply(text);
+  return ctx.reply(bodyText);
+}
+
+/**
+ * Send the papers hub card, optionally with custom body text (used by the
+ * welcome flow so the greeting and the menu arrive as ONE message).
+ * Returns false when papers are not configured (caller can fall back).
+ */
+async function sendHubCard(sock, mek, m, ctx, opts = {}) {
+  try {
+    if (!rootId()) return false;
+    await showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1, 0, opts);
+    return true;
+  } catch (e) {
+    console.error('papers: hub card failed:', e.message || e);
+    return false;
+  }
 }
 
 /* ── download ────────────────────────────────────────────────────────── */
@@ -788,6 +806,7 @@ cmd({
 
 module.exports = {
   resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
+  sendHubCard,
   fmtSize, cleanName, mimeFor, fileNameFor,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
 };

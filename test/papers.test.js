@@ -516,6 +516,37 @@ const ok = (cond, name, extra) => {
   // unusable entry
   ok(participantInfo({ admin: null }).digits === '', 'unusable participant -> no digits');
 
+  /* 15l. sendHubCard — welcome + papers menu in ONE message */
+  const papersMod = require('../plugins/papers');
+  ok(typeof papersMod.sendHubCard === 'function', 'sendHubCard exported');
+  lastCard = null;
+  const hubCtx = { from: 'HUB@g.us', reply: async (t) => { sent.push({ reply: t }); } };
+  const welcomeText = "*👋 Welcome, Kasun! 🎓*\n*You're in A/L Class 📖*\n*🤖 I'm AI Mate Assistant — type papers to grab past papers.*";
+  let separateTextSent = false;
+  const origSockSend = sock.sendMessage;
+  const hubResult = await papersMod.sendHubCard(
+    { sendMessage: async () => { separateTextSent = true; } },
+    { key: { id: 'HUBMSG', remoteJid: 'HUB@g.us', fromMe: false }, message: { conversation: 'welcome' } },
+    { sendButtonMenu: async (payload) => { lastCard = payload; } },
+    hubCtx,
+    { customText: welcomeText }
+  );
+  ok(hubResult === true, 'sendHubCard returns true when configured');
+  ok(lastCard && lastCard.text.includes('Welcome, Kasun') && lastCard.text.includes("You're in A/L Class"),
+     'welcome text IS the card body (same message)', lastCard && lastCard.text);
+  ok(!separateTextSent, 'no separate text message sent');
+  ok(lastCard && lastCard.image && lastCard.sections && lastCard.sections[0].rows.length,
+     'hub card has logo + folder rows');
+  ok(lastCard && lastCard.title.includes('AI Mate Papers'), 'hub card title shows library name');
+  // unconfigured → false
+  const gdriveT = require('../lib/gdrive');
+  const realEx2 = gdriveT.extractId;
+  gdriveT.extractId = () => '';
+  const hubFail = await papersMod.sendHubCard({ sendMessage: async () => {} }, {}, {},
+    { from: 'X@g.us', reply: async () => {} }, { customText: 'x' });
+  gdriveT.extractId = realEx2;
+  ok(hubFail === false, 'sendHubCard returns false when not configured');
+
   /* 15k. welcome synthetic mek must carry a message (Baileys quoted crash) */
   // Baileys (rc.14 messages.js:568) reads quoted.message when sending
   // interactive cards; an empty synthetic mek crashed gifteds/baileys with
@@ -523,6 +554,8 @@ const ok = (cond, name, extra) => {
   const indexSrc = require('fs').readFileSync('/home/user/test12/index.js', 'utf8');
   const fakeBlock = indexSrc.slice(indexSrc.indexOf('const fakeMek'), indexSrc.indexOf('};', indexSrc.indexOf('const fakeMek')));
   ok(/message:\s*\{\s*conversation:/.test(fakeBlock), 'welcome fakeMek carries a minimal .message', fakeBlock);
+  ok(/sendHubCard/.test(indexSrc) && !/pattern === 'menu'/.test(indexSrc.slice(indexSrc.indexOf('greetMember'))),
+     'welcome flow attaches the papers hub (not the main menu)');
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

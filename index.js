@@ -169,26 +169,24 @@ async function connectToWA() {
       await test.sendMessage(groupJid, { text, mentions: [`${digits}@s.whatsapp.net`] });
       console.log(`👋 Welcomed new member ${name} to ${groupJid}`);
 
-      // Follow up with the interactive main menu as a button message
+      // The papers hub menu in the SAME message as the greeting: the welcome
+      // text becomes the card body (dropdown = the papers main menu).
       try {
-        const menuCmd = commands.find((c) => c.pattern === 'menu');
-        if (menuCmd) {
-          // NOTE: must carry a minimal .message — Baileys reads quoted.message
-          // when sending interactive cards, and an empty body crashes it
-          // ("Cannot read properties of undefined (reading 'undefined')").
-          const fakeMek = {
-            key: { remoteJid: groupJid, fromMe: false, id: `WELCOME-${Date.now()}`, participant: participantJid },
-            pushName: name,
-            message: { conversation: 'welcome' }
-          };
-          await menuCmd.function(test, fakeMek, sms(test, fakeMek), {
-            from: groupJid,
-            sender: participantJid,
-            q: '',
-            reply: (t) => test.sendMessage(groupJid, { text: t }, { quoted: fakeMek })
-          });
-          console.log(`📋 Sent main menu to ${name}`);
-        }
+        const papers = require('./plugins/papers');
+        // NOTE: the synthetic mek must carry a minimal .message — Baileys
+        // reads quoted.message when sending interactive cards, and an empty
+        // body crashes it ("reading 'undefined'").
+        const fakeMek = {
+          key: { remoteJid: groupJid, fromMe: false, id: `WELCOME-${Date.now()}`, participant: participantJid },
+          pushName: name,
+          message: { conversation: 'welcome' }
+        };
+        const ok2 = await papers.sendHubCard(test, fakeMek, sms(test, fakeMek), {
+          from: groupJid,
+          reply: (t) => test.sendMessage(groupJid, { text: t }, { quoted: fakeMek })
+        }, { customText: text });
+        if (ok2) console.log(`📋 Sent papers menu attached to the welcome for ${name}`);
+        else console.log('ℹ️ Papers not configured — welcome sent without menu');
       } catch (me) {
         console.error('⚠️ welcome menu card failed:', me.message || me);
       }
