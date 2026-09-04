@@ -50,9 +50,14 @@ const axiosStub = {
     if (mE) return { data: Buffer.from('EXPORTED_PDF_' + mE[1]) };
     const mM = url.match(/\/files\/([^/?]+)$/);
     if (mM && opts.params && opts.params.alt === 'media') return { data: Buffer.from('CONTENT_' + mM[1]) };
-    const mM2 = url.match(/\/drive\/v3\/([^/?]+)$/);
-    if (mM2) return { data: { id: mM2[1], name: META[mM2[1]] || mM2[1], mimeType: FOLDER_MIME } };
-    throw new Error('stub: unhandled GET ' + url);
+    const mM2 = url.match(/\/drive\/v3\/files\/([^/?]+)$/);
+    if (mM2 && !(opts.params && opts.params.alt)) {
+      return { data: { id: mM2[1], name: META[mM2[1]] || mM2[1], mimeType: FOLDER_MIME } };
+    }
+    // anything else: behave like the real API — reject with a 404
+    const e = new Error('Request failed with status code 404');
+    e.response = { status: 404, data: { error: { code: 404, message: 'Not Found' } } };
+    throw e;
   },
   post: async () => { throw new Error('stub: no OAuth in tests'); }
 };
