@@ -20,7 +20,7 @@ const config = require('../config');
 const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
 const { isTapResponse } = require('../lib/msg');
-const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS } = require('../lib/papersearch');
+const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS, classifyFileName, subjectFromTokens } = require('../lib/papersearch');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
@@ -38,6 +38,7 @@ let cache = { at: 0, building: null, index: null };
 // else's "papers". The Drive index cache above is global on purpose: it is
 // the same library for everyone and keeps API quota usage tiny.
 const browse = {};      // studentKey -> { pathIds:[], pathNames:[], at }
+const interviews = {};  // studentKey -> { subject, year, medium, type, at } — missing-detail questions
 const lastList = {};    // studentKey -> { view, title, items, page, pages, at }
 const cooldowns = {};   // "chat:sender" -> last download ts
 
@@ -48,7 +49,7 @@ function skey(ctx) {
 /** Drop stale navigation/list state so old views never leak back in. */
 function pruneState() {
   const cutoff = Date.now() - (30 * 60 * 1000);
-  for (const map of [browse, lastList]) {
+  for (const map of [browse, lastList, interviews]) {
     for (const k of Object.keys(map)) {
       if (!map[k] || !map[k].at || map[k].at < cutoff) delete map[k];
     }
@@ -494,6 +495,177 @@ async function downloadEntry(sock, mek, ctx, entry) {
   });
 }
 
+/* ── paper interviews — ASK for missing details, never dump lists ────── */
+const TYPE_WORDS = {
+  marking: ['marking', 'scheme', 'schema', 'answer', 'answers'],
+  mcq: ['mcq'],
+  essay: ['essay', 'structured']
+};
+const TYPE_LABELS = { marking: '🏷️ Marking scheme', mcq: '🏷️ MCQ paper', essay: '🏷️ Essay / structured', paper: '🏷️ Question paper' };
+
+const clsCache = new WeakMap();
+function classifyAll(index) {
+  let m = clsCache.get(index);
+  if (!m) {
+    m = new Map();
+    for (const f of (index.files || [])) m.set(f, classifyFileName(f.name));
+    clsCache.set(index, m);
+  }
+  return m;
+}
+function yearsFor(index, subject, medium) {
+  const years = new Set();
+  for (const c of classifyAll(index).values()) {
+    if (c.subject === subject && (!medium || c.medium === medium) && c.year) years.add(c.year);
+  }
+  return [...years].sort();
+}
+function subjectsForYear(index, year) {
+  const subs = new Set();
+  for (const c of classifyAll(index).values()) {
+    if (c.year === year && c.subject) subs.add(c.subject);
+  }
+  return [...subs].sort();
+}
+function mediumsFor(index, year, subject) {
+  const meds = new Set();
+  for (const c of classifyAll(index).values()) {
+    if (c.year === year && (!subject || c.subject === subject) && c.medium) meds.add(c.medium);
+  }
+  return [...meds].sort();
+}
+function filterByType(files, type) {
+  if (!type) return files;
+  if (type === 'paper') {
+    const exact = files.filter((f) => classifyFileName(f.name).extra.every((w) => w === 'paper' || w === 'papers'));
+    return exact.length ? exact : files;
+  }
+  const hit = files.filter((f) => classifyFileName(f.name).extra.some((w) => TYPE_WORDS[type].includes(w)));
+  return hit.length ? hit : files;
+}
+
+/** The "not found" reply with available-subjects hint (shared). */
+async function paperNotFound(ctx, index, q, degraded) {
+  const subLabel = SUBJECTS[q.subject] ? SUBJECTS[q.subject].label : (q.subjectRaw || '');
+  const medLabel = MEDIUMS[q.medium] ? MEDIUMS[q.medium].label : null;
+  const label = `${q.year || ''}${subLabel ? ` ${subLabel}` : ''}${medLabel ? ` — ${medLabel} medium` : ''}`.trim();
+  const yearFolder = index.folders.find((f) => (f.path || []).some((n) => String(n).includes(String(q.year || ''))));
+  let hint = '';
+  if (yearFolder) {
+    const depth = yearFolder.path.length;
+    const subs = [...new Set(index.folders
+      .filter((f) => f.path.length === depth + 1 && f.path[depth - 1] === yearFolder.path[depth - 1])
+      .map((f) => f.path[depth]))].slice(0, 8);
+    if (subs.length) hint = `\n📚 In *${q.year}* we have: ${subs.join(', ')}`;
+  }
+  return ctx.reply(
+    `❌ *Paper not found:* ${label}\n` +
+    `That combination isn't in the library yet.${hint}\n\n` +
+    `💡 Try another medium, or send *papers* to browse 📂` +
+    (degraded ? '\n⚠️ _Saved copy shown — Drive unreachable right now._' : '')
+  );
+}
+
+/** Ask ONE question (with tap buttons) for the next missing detail. */
+async function askMissing(sock, mek, m, ctx, st, index) {
+  const ctxLine = [
+    st.year && `📅 ${st.year}`,
+    st.subject && `📘 ${SUBJECTS[st.subject].label}`,
+    st.medium && `🌐 ${MEDIUMS[st.medium].label}`
+  ].filter(Boolean).join(' · ');
+
+  let rows = [], question = '', listTitle = '', more = '';
+  if (!st.year) {
+    const years = yearsFor(index, st.subject, st.medium);
+    const shown = years.slice(0, BUTTON_ROWS);
+    rows = shown.map((y) => ({ id: `${config.PREFIX}ppick year ${y}`, title: `📅 ${y}`, description: `${st.subject ? SUBJECTS[st.subject].label : 'Papers'} ${y}` }));
+    if (years.length > shown.length) more = `\n📄 …and ${years.length - shown.length} more years — type the year`;
+    question = '📅 *What year do you need?*';
+    listTitle = '🗓️ Pick a year…';
+  } else if (!st.subject) {
+    const subs = subjectsForYear(index, st.year);
+    const shown = subs.slice(0, BUTTON_ROWS);
+    rows = shown.map((s) => ({ id: `${config.PREFIX}ppick subject ${s}`, title: `📘 ${SUBJECTS[s].label}`, description: `${st.year} papers` }));
+    if (subs.length > shown.length) more = `\n📄 …and ${subs.length - shown.length} more — type the subject name`;
+    question = '📘 *Which subject do you need?*';
+    listTitle = '📘 Pick a subject…';
+  } else {
+    const meds = mediumsFor(index, st.year, st.subject);
+    rows = meds.map((mk) => ({ id: `${config.PREFIX}ppick medium ${mk}`, title: `🌐 ${MEDIUMS[mk].label}`, description: `${st.year} ${SUBJECTS[st.subject].label} — ${MEDIUMS[mk].label}` }));
+    question = '🌐 *Which medium do you want?*';
+    listTitle = '🌐 Pick a medium…';
+  }
+  if (!rows.length) {
+    return ctx.reply(`🤔 I need a bit more detail to find your paper.\n${ctxLine}\n\n💡 Try the short style: *2019 chem sinhala*`);
+  }
+  const body =
+    `${ctxLine ? ctxLine + '\n\n' : ''}${question}${more}\n` +
+    `💬 Or just type your answer` +
+    (st.type ? `\n${TYPE_LABELS[st.type] || ''}` : '');
+  if (m && typeof m.sendButtonMenu === 'function') {
+    try {
+      await m.sendButtonMenu({
+        title: '',
+        text: body,
+        footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+        listTitle,
+        sections: [{ title: '🧭 Tap your answer', rows }]
+      });
+      return;
+    } catch (e) { console.error('papers: question card failed:', e.message || e); }
+  }
+  return ctx.reply(body);
+}
+
+/** Merge request details into the student's interview; ask or resolve. */
+async function startOrContinuePaperRequest(sock, mek, m, ctx, q) {
+  const sk = skey(ctx);
+  pruneState();
+  const prev = interviews[sk] || {};
+  const st = {
+    subject: q.subject || prev.subject || null,
+    year: Number.isFinite(q.year) && q.year ? q.year : (prev.year || null),
+    medium: q.medium || prev.medium || null,
+    type: q.type || prev.type || null,
+    at: Date.now()
+  };
+  if (st.year && st.subject && st.medium) {
+    delete interviews[sk];
+    return directPaperRequest(sock, mek, m, ctx, st);
+  }
+  const { index, degraded } = await getIndex();
+  if (st.year && st.subject && !mediumsFor(index, st.year, st.subject).length) {
+    delete interviews[sk];
+    return paperNotFound(ctx, index, st, degraded);
+  }
+  if (!st.subject && st.year && !subjectsForYear(index, st.year).length) {
+    delete interviews[sk];
+    return paperNotFound(ctx, index, st, degraded);
+  }
+  interviews[sk] = st;
+  return askMissing(sock, mek, m, ctx, st, index);
+}
+
+/** Parse a chat answer for the pending question ("2020", "sinhala", …). */
+function parseInterviewAnswer(body) {
+  const toks = String(body || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (!toks.length) return null;
+  if (toks.some((t) => ['cancel', 'stop', 'exit', 'epa', 'nathi'].includes(t))) return { cancel: true };
+  const yr = toks.find((t) => /^(19|20)\d{2}$/.test(t));
+  if (yr) return { field: 'year', value: yr };
+  for (let i = toks.length - 1; i >= 0; i--) {
+    for (const [k, v] of Object.entries(MEDIUMS)) {
+      if (v.tokens.includes(toks[i])) return { field: 'medium', value: k };
+    }
+  }
+  for (const [k, ws] of Object.entries(TYPE_WORDS)) {
+    if (toks.some((t) => ws.includes(t))) return { field: 'type', value: k };
+  }
+  const sub = subjectFromTokens(toks);
+  if (sub) return { field: 'subject', value: sub };
+  return null;
+}
+
 /* ── structured requests — "2016 chemistry sinhala medium" ───────────── */
 function usageGuide(ctx) {
   const words = Object.values(SUBJECTS).map((s) => s.label);
@@ -563,7 +735,7 @@ async function directPaperRequest(sock, mek, m, ctx, q) {
   const label = `${q.year}${subLabel ? ` ${subLabel}` : ''}` +
     `${medLabel ? ` — ${medLabel} medium` : ''}`;
 
-  let matches = matchPaper(index, q);
+  let matches = filterByType(matchPaper(index, q), q.type);
   if (!matches.length && (!q.subject || !q.medium)) {
     // partial ask (e.g. no medium) — retry fuzzy WITHIN the year
     // (searchIndex pins the year itself, so results stay inside it)
@@ -582,22 +754,7 @@ async function directPaperRequest(sock, mek, m, ctx, q) {
       matches.length === 1 ? '📥 Download…' : '📥 Pick a paper…');
   }
 
-  // not found — is the year itself in the library? then hint the subjects
-  const yearFolder = index.folders.find((f) => (f.path || []).some((n) => String(n).includes(String(q.year))));
-  let hint = '';
-  if (yearFolder) {
-    const depth = yearFolder.path.length;
-    const subs = [...new Set(index.folders
-      .filter((f) => f.path.length === depth + 1 && f.path[depth - 1] === yearFolder.path[depth - 1])
-      .map((f) => f.path[depth]))].slice(0, 8);
-    if (subs.length) hint = `\n📚 In *${q.year}* we have: ${subs.join(', ')}`;
-  }
-  return ctx.reply(
-    `❌ *Paper not found:* ${label}\n` +
-    `That combination isn't in the library yet.${hint}\n\n` +
-    `💡 Try another medium, or send *papers* to browse 📂` +
-    (degraded ? '\n⚠️ _Saved copy shown — Drive unreachable right now._' : '')
-  );
+  return paperNotFound(ctx, index, q, degraded);
 }
 
 /* ── .papers — browse / search ───────────────────────────────────────── */
@@ -666,9 +823,10 @@ const papersCommand = cmd({
     }
 
     // structured request first: ".papers 2016 chemistry sinhala medium"
+    // (missing details start a short interview instead of a loose list)
     const structured = parsePaperQuery(query);
-    if (structured && structured.subject) {
-      return directPaperRequest(sock, mek, m, ctx, structured);
+    if (structured && structured.year && (structured.subject || structured.medium)) {
+      return startOrContinuePaperRequest(sock, mek, m, ctx, structured);
     }
 
     // a folder name (top-level or inside the current folder) always wins —
@@ -792,8 +950,8 @@ const paperCommand = cmd({
 
     // structured request: ".paper 2016 chem sinhala"
     const structured = parsePaperQuery(arg);
-    if (structured && structured.subject) {
-      return directPaperRequest(sock, mek, m, ctx, structured);
+    if (structured && structured.year && (structured.subject || structured.medium)) {
+      return startOrContinuePaperRequest(sock, mek, m, ctx, structured);
     }
 
     // by name — prefer the current list, then search everything
@@ -842,6 +1000,43 @@ const paperCommand = cmd({
   }
 });
 
+/* ── .ppick — tap answers for paper questions (year/medium/subject) ──── */
+const ppickCommand = cmd({
+  pattern: 'ppick',
+  react: '🧭',
+  desc: 'Answer a papers question (used by the tap buttons)',
+  category: 'main',
+  filename: __filename
+}, async (sock, mek, m, ctx) => {
+  const { args, reply } = ctx;
+  const sk = skey(ctx);
+  const field = String(args[0] || '').toLowerCase();
+  const value = args.slice(1).join(' ').trim().toLowerCase();
+
+  if (field === 'cancel') {
+    delete interviews[sk];
+    return reply('👌 Cancelled — send *papers* whenever you need 📚');
+  }
+  const st = interviews[sk] || { subject: null, year: null, medium: null, type: null };
+  if (field === 'year' && /^\d{4}$/.test(value)) {
+    st.year = parseInt(value, 10);
+  } else if (field === 'medium') {
+    const mk = Object.keys(MEDIUMS).find((k) => k === value || MEDIUMS[k].tokens.includes(value));
+    if (!mk) return reply('🤔 Which medium — *sinhala*, *english* or *tamil*?');
+    st.medium = mk;
+  } else if (field === 'subject') {
+    const sv = subjectFromTokens(value.split(/\s+/)) || (SUBJECTS[value] ? value : null);
+    if (!sv) return reply("🤔 I didn't catch the subject — e.g. *chem*, *phy*, *bio*.");
+    st.subject = sv;
+  } else if (field === 'type') {
+    st.type = ['marking', 'mcq', 'essay', 'paper'].includes(value) ? value : null;
+  } else {
+    return reply('🤔 That option expired — send *papers* to start again 📚');
+  }
+  st.at = Date.now();
+  return startOrContinuePaperRequest(sock, mek, m, ctx, st);
+});
+
 /* ── no-prefix triggers — students just type "papers" / "chemistry past papers" ── */
 let settingsPlugin = null;
 try { settingsPlugin = require('./settings'); } catch (e) { /* optional */ }
@@ -885,6 +1080,10 @@ cmd({
       // student gets the usage guide instead of silence.
       const sq = smart.parsePaperQuery(norm);
       if (sq && (sq.subject || sq.hasMediumNoun)) return true;
+
+      // pending paper interview — the student is answering our question
+      const ivKey = `${extra.message?.key?.remoteJid}:${extra.sender}`;
+      if (interviews[ivKey] && tokens.length <= 6) return true;
 
       // FREE-FORM: any short message mentioning papers ("i want 2020 A/L
       // chemistry past paper") or a year + subject ("2019 chemistry") goes
@@ -963,10 +1162,25 @@ cmd({
       return usageGuide(ctx);
     }
 
-    // STRUCTURED request → "2016 chemistry sinhala medium" → direct download
+    // pending interview — the message is (probably) an ANSWER to our question
+    const skIv = skey(ctx);
+    if (interviews[skIv]) {
+      const ans = parseInterviewAnswer(body);
+      if (ans && ans.cancel) {
+        delete interviews[skIv];
+        return ctx.reply('👌 Cancelled — send *papers* whenever you need 📚');
+      }
+      if (ans && ans.field) {
+        return ppickCommand.function(sock, mek, m, pass({ args: [ans.field, String(ans.value)] }));
+      }
+      // not an answer — keep the interview and continue below
+    }
+
+    // STRUCTURED request → "2016 chemistry sinhala medium" (missing details
+    // start a short interview instead of dumping a loose list)
     const parsed = smart.parsePaperQuery(body);
-    if (parsed && parsed.subject && parsed.medium) {
-      return directPaperRequest(sock, mek, m, ctx, parsed);
+    if (parsed && parsed.year && (parsed.subject || parsed.medium)) {
+      return startOrContinuePaperRequest(sock, mek, m, ctx, parsed);
     }
 
     // AI-FIRST: the Gemini brain interprets ANY free-form message using the
@@ -977,8 +1191,8 @@ cmd({
     if (index) {
       const interp = await smart.aiInterpret(ctx.body, index);
       if (interp && interp.action === 'find') {
-        // strict year+subject(+medium) match — never a loose keyword search
-        return directPaperRequest(sock, mek, m, ctx, interp);
+        // strict match; missing year/medium/subject → ASK, never a dump
+        return startOrContinuePaperRequest(sock, mek, m, ctx, interp);
       }
       if (interp && interp.action === 'search') {
         const res = smart.searchIndex(index, interp.keywords);

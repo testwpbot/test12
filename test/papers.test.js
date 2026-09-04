@@ -398,7 +398,8 @@ const ok = (cond, name, extra) => {
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS5@g.us', args: ['රසායන', '2021'] }));
   r = lastReply();
   ok(global.AI_CALLS >= 1, 'AI expansion endpoint called');
-  ok(r.includes('රසායන') && r.includes('✨ AI') && r.includes('Chemistry_PP1.pdf'), 'AI-expanded query finds chemistry', r);
+  ok(r.includes('2021 Chemistry') && r.includes('Chemistry_PP1.pdf') && r.includes('2022') === false,
+     'AI-expanded query → structured 2021 chemistry pick card', r);
   // AI down → silent fallback to local search
   global.AI_DOWN = true;
   sent = [];
@@ -418,7 +419,8 @@ const ok = (cond, name, extra) => {
   ok(global.AI_KEY_CALLS['111111'] === 1, 'key 1 tried first', JSON.stringify(global.AI_KEY_CALLS));
   ok(global.AI_KEY_CALLS['222222'] === 1, 'key 2 took over after the 429', JSON.stringify(global.AI_KEY_CALLS));
   ok(!global.AI_KEY_CALLS['333333'], 'key 3 not wasted on that call');
-  ok(lastReply().includes('✨ AI'), 'fallback still delivered AI results', lastReply());
+  ok(lastReply().includes('2021 Chemistry') && lastReply().includes('Chemistry_PP1.pdf'),
+     'fallback still delivered AI results (structured pick)', lastReply());
   // exhausted key stays benched on later calls (rotation moves on by itself)
   await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP2@g.us', args: ['රසායන 2021'] }));
   await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP3@g.us', args: ['රසායන 2020'] }));
@@ -465,35 +467,101 @@ const ok = (cond, name, extra) => {
   const fFF = (t) => npFF.filter(t, { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } } });
   ok(fFF('i want 2020 A/L chemistry past paper') === true, 'trigger: free-form request admitted');
   ok(fFF('give me a chemistry paper') === true, 'trigger: casual paper ask admitted');
-  // find → exact paper pick card (AI saw the real library structure)
   let ffCard = null;
   const ffM = { sendButtonMenu: async (payload) => { ffCard = payload; } };
-  global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":"sinhala"}';
+  const ppickCmd = commands.find((c) => c.pattern === 'ppick');
+  ok(!!ppickCmd, 'ppick command registered for interview taps');
+
+  // ── FF1a: free-form ask, medium missing → the bot ASKS (buttons), then resolves
   sent = [];
+  ffCard = null;
   await npFF.function(sock, mek, ffM, { from: 'FF1@g.us', body: 'i want 2020 A/L chemistry past paper', sender: '94778111111@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.listTitle === '🌐 Pick a medium…' && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('Sinhala'),
+     "missing medium → 'Which medium do you want?' question card (sinhala available)", JSON.stringify(ffCard && ffCard.text));
+  // student taps the medium → exact paper pick card
+  sent = [];
+  ffCard = null;
+  await ppickCmd.function(sock, mek, ffM, ctx({ from: 'FF1@g.us', args: ['medium', 'sinhala'], sender: '94778111111@s.whatsapp.net' }));
   ok(ffCard && ffCard.sections[0].rows.length === 1 &&
      ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
-     "free-form 'i want 2020 A/L chemistry past paper' → exact paper card", JSON.stringify(ffCard && ffCard.sections));
+     'answering the medium → exact 2020 chemistry card', JSON.stringify(ffCard && ffCard.sections));
   sent = [];
   await paperCmd.function(sock, mek, {}, ctx({ from: 'FF1@g.us', args: ['1'], sender: '94778111111@s.whatsapp.net' }));
   await drain();
   ok(docs().some((d) => d.content.fileName && d.content.fileName.includes('2020_Chemistry_Sinhala')),
-     'tapping the AI-found paper downloads it', JSON.stringify(docs().map((d) => d.content.fileName)));
-  // find with missing medium → STRICT year+subject card (never loose search)
+     'tapping the found paper downloads it', JSON.stringify(docs().map((d) => d.content.fileName)));
+
+  // ── FF1b: AI find with FULL details (Sinhala query → AI needed) → straight to the paper
+  global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":"sinhala"}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FF1b@g.us', body: 'රසායන 2020', sender: '94778111112@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
+     'AI find (full details) → exact paper card, no questions', JSON.stringify(ffCard && ffCard.sections));
+
+  // ── FF-year: year missing → 'What year do you need?' with available years
+  global.AI_INTERPRET = '{"action":"find","year":null,"subject":"biology","medium":"sinhala"}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FFY@g.us', body: 'ජීව විද්යාව sinhala', sender: '94778111113@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…' && ffCard.sections[0].rows.some((r) => r.title === '📅 2016'),
+     "missing year → 'What year do you need?' with years that HAVE the subject", JSON.stringify(ffCard && ffCard.sections));
+  // tap the year → variants card (both 2016 biology sinhala siblings)
+  sent = [];
+  ffCard = null;
+  await ppickCmd.function(sock, mek, ffM, ctx({ from: 'FFY@g.us', args: ['year', '2016'], sender: '94778111113@s.whatsapp.net' }));
+  ok(ffCard && ffCard.sections[0].rows.length === 2,
+     'answering the year → the paper(s) as tap rows', JSON.stringify(ffCard && ffCard.sections));
+
+  // ── FF-text: student TYPES the answer instead of tapping
   global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":null}';
   sent = [];
   ffCard = null;
-  await npFF.function(sock, mek, ffM, { from: 'FF2@g.us', body: 'Biology 2020 past paper'.replace('Biology', 'chemistry'), reply: async (t) => { sent.push({ reply: t }); } });
+  await npFF.function(sock, mek, ffM, { from: 'FFT@g.us', body: 'රසායන 2020', sender: '94778111114@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.listTitle === '🌐 Pick a medium…', 'interview opened (medium question)', ffCard && ffCard.listTitle);
+  ok(fFF('sinhala') === true, 'pending interview admits a plain answer');
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FFT@g.us', body: 'sinhala', sender: '94778111114@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   ok(ffCard && ffCard.sections[0].rows.length === 1 &&
      ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
-     'partial find (no medium) → strictly 2020 chemistry only', JSON.stringify(ffCard && ffCard.sections));
+     "typed answer 'sinhala' completes the paper lookup", JSON.stringify(ffCard && ffCard.sections));
 
-  // 'Biology 2020 past paper' — AI says 2020 biology; none in the library
+  // ── FF-type: marking schemes & variants — ask for the TYPE via AI
+  global.AI_INTERPRET = '{"action":"find","year":2016,"subject":"biology","medium":"sinhala","type":"mcq"}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FFT2@g.us', body: 'ජීව විද්යාව 2016 mcq', sender: '94778111115@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('MCQ'),
+     "type 'mcq' → only the MCQ sibling", JSON.stringify(ffCard && ffCard.sections));
+
+  // ── FF-cancel: a pending interview can be cancelled by text
+  global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":null}';
+  await npFF.function(sock, mek, ffM, { from: 'FFC@g.us', body: 'රසායන 2020', sender: '94778111116@s.whatsapp.net', reply: async () => {} });
+  ok(npFF.filter('cancel', { sender: '94778111116@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'FFC@g.us' } } }) === true,
+     'pending interview admits cancel');
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'FFC@g.us', body: 'cancel', sender: '94778111116@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.map((s) => s.reply).join('').includes('Cancelled'), "'cancel' clears the interview");
+
+  // interpretation normalizer: type dimension + rejections
+  const NI = smart.normalizeInterpretation;
+  ok(NI({ action: 'find', year: 2019, subject: 'chemistry', medium: 'sinhala', type: 'marking' }).type === 'marking' &&
+     NI({ action: 'find', year: 2019, subject: 'chemistry', medium: 'sinhala', type: 'marking' }).subject === 'chemistry',
+     'normalizer: canonical subject kept with type');
+  ok(NI({ action: 'find', year: 2019, subject: 'zzz' }) === null, 'normalizer: unknown subject rejected');
+  const sillyYear = NI({ action: 'find', year: 1899, subject: 'biology' });
+  ok(sillyYear && sillyYear.year === null, 'normalizer: silly year dropped');
+
+  // 'Biology 2020 past paper' — no 2020 biology in the library
   // → NOT-FOUND (never 64 loose results from other years)
   global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"biology","medium":null}';
   sent = [];
   ffCard = null;
-  await npFF.function(sock, mek, ffM, { from: 'FF6@g.us', body: 'Biology 2020 past paper', reply: async (t) => { sent.push({ reply: t }); } });
+  await npFF.function(sock, mek, ffM, { from: 'FF6@g.us', body: 'Biology 2020 past paper', sender: '94778111117@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   const nfBio = sent.map((s) => s.reply).join('\n');
   ok(!ffCard && nfBio.includes('Paper not found') && nfBio.includes('2020 Biology'),
      "'Biology 2020 past paper' with no 2020 biology → clean not-found", nfBio.slice(0, 120));
@@ -542,8 +610,8 @@ const ok = (cond, name, extra) => {
   sent = [];
   ffCard = null;
   await npFF.function(sock, mek, ffM, { from: 'FF5@g.us', body: 'i want 2020 chemistry past paper', reply: async (t) => { sent.push({ reply: t }); } });
-  ok((ffCard && ffCard.text.includes('found')) || sent.map((s) => s.reply).join('').includes('2020_Chemistry'),
-     'AI down → local fallback finds 2020 chemistry', JSON.stringify(ffCard && ffCard.text));
+  ok(ffCard && ffCard.listTitle === '🌐 Pick a medium…',
+     'AI down → structured engine still ASKS the medium (no dump)', ffCard && ffCard.listTitle);
   global.AI_DOWN = false;
   delete process.env.GEMINI_API_KEY;
   smart.geminiReset();
