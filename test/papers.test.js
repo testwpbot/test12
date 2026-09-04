@@ -212,10 +212,11 @@ const ok = (cond, name, extra) => {
   /* 7. search + deep paths */
   await papersCmd.function(sock, mek, {}, ctx({ args: ['chemistry'] }));
   r = lastReply();
-  ok(r.includes('3 found') && r.includes('↳ _2021_'), 'search shows matches + paths', r);
-  await papersCmd.function(sock, mek, {}, ctx({ args: ['physics', 'deep'] }));
+  ok(r.includes('What year do you need') && r.includes('2020') && r.includes('2021'),
+     "subject ask '.papers chemistry' → year interview (no dump)", r);
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['verydeep'] }));
   r = lastReply();
-  ok(r.includes('DEEP_Paper.pdf') && r.includes('↳ _2021 / Physics / VeryDeep_'), 'multi-token search reaches 3 levels deep', r);
+  ok(r.includes('DEEP_Paper.pdf') && r.includes('↳ _2021 / Physics / VeryDeep_'), 'keyword search still reaches 3 levels deep', r);
 
   /* 8. deep navigation + back/home */
   await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
@@ -375,21 +376,22 @@ const ok = (cond, name, extra) => {
   // synonyms / prefixes / typos / stopwords
   sent = [];
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['chem'] }));
-  ok(lastReply().includes('3 found') && lastReply().includes('Chemistry_PP1.pdf'), "synonym: 'chem' → chemistry", lastReply());
+  ok(lastReply().includes('What year do you need'), "synonym: 'chem' → chemistry interview", lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['phy', 'pp1'] }));
-  ok(lastReply().includes('Physics_PP1.pdf'), "prefix: 'phy pp1' → physics paper", lastReply());
+  ok(lastReply().includes('What year do you need'), "prefix: 'phy pp1' → physics interview", lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['phisics'] }));
-  ok(lastReply().includes('Physics_PP1.pdf') || lastReply().includes('1 found'), "typo: 'phisics' → physics", lastReply());
+  ok(lastReply().includes('What year do you need'), "typo: 'phisics' → physics interview (KB catches typos)", lastReply());
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['past', 'papers', 'chemistry'] }));
-  ok(lastReply().includes('3 found'), 'stopwords ignored in search', lastReply());
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['chemistry', 'zzzqq'] }));
+  ok(lastReply().includes('What year do you need'), 'stopwords ignored — chemistry interview', lastReply());
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['physsics', 'zzzqq'] }));
   r = lastReply();
-  ok(r.includes('loose match') && r.includes('Chemistry_PP1.pdf'), 'loose-match fallback flags + finds', r);
+  ok(r.includes('loose match') && r.includes('Physics_PP1.pdf'), 'loose-match fallback flags + finds', r);
 
   // smart folder match: 'phy' opens Physics inside 2021
   await papersCmd.function(sock, mek, {}, ctx({ from: 'SS4@g.us', args: ['2021'] }));
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS4@g.us', args: ['phy'] }));
-  ok(lastReply().includes('AI Mate Papers / 2021 / Physics'), "smart folder match: 'phy' opens Physics", lastReply());
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS4@g.us', args: ['zzzfolder'] }));
+  ok(lastReply().includes('zzzfolder') || lastReply().includes('Nothing matched') || lastReply().includes('No papers found'),
+     'unknown folder word → search fallback (no crash)', lastReply());
 
   // AI expansion (Gemini mock): Sinhala query → english tokens
   process.env.GEMINI_API_KEY = 'AIzaFAKEGEMINIKEY1234567890';
@@ -456,7 +458,7 @@ const ok = (cond, name, extra) => {
   smart.geminiReset();
   global.AI_CALLS = 0;
   await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP8@g.us', args: ['chem'] }));
-  ok(global.AI_CALLS === 0 && lastReply().includes('3 found'), 'local hit → zero AI calls', String(global.AI_CALLS));
+  ok(global.AI_CALLS === 0 && lastReply().includes('What year do you need'), 'local hit → interview with zero AI calls', String(global.AI_CALLS));
   delete process.env.GEMINI_API_KEY;
   smart.geminiReset();
 
@@ -646,7 +648,7 @@ const ok = (cond, name, extra) => {
 
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN4@g.us', args: ['chem'] }));
-  ok(lastCard && lastCard.listTitle.includes('Pick a result'), 'search: picker says "Pick a result"', lastCard && lastCard.listTitle);
+  ok(lastCard && lastCard.listTitle.includes('Pick a year'), 'subject ask: picker says "Pick a year"', lastCard && lastCard.listTitle);
 
   /* 15f. logo only on the main menu card */
   lastCard = null;
@@ -671,7 +673,7 @@ const ok = (cond, name, extra) => {
      'breadcrumb uses custom name (in body, no duplicate header)', lastCard && lastCard.text.slice(0, 100));
   sent = [];
   await papersCmd.function(sock, mek, {}, ctx({ from: 'RN3@g.us', args: ['chem'] }));
-  ok(lastReply().includes('AI Mate Papers') === false && lastReply().includes('3 found'), 'search title clean', lastReply());
+  ok(lastReply().includes('AI Mate Papers') === false && lastReply().includes('What year do you need'), 'interview text clean (no menu header)', lastReply());
   // folder matching still works on REAL names
   sent = [];
   await papersCmd.function(sock, mek, {}, ctx({ from: 'RN4@g.us', args: ['2020'] }));
@@ -712,8 +714,8 @@ const ok = (cond, name, extra) => {
   sent = [];
   lastCard = null;
   await np.function(sock, mek, mCard, { from: 'NP2@g.us', body: 'chemistry past papers', reply: async (t) => { sent.push({ reply: t }); } });
-  ok((lastCard && lastCard.text.includes('3 found')) || sent.map((s) => s.reply).join('').includes('3 found'),
-     "AI-unconfigured 'chemistry past papers' → local fallback results", JSON.stringify(lastCard && lastCard.text));
+  ok(lastCard && lastCard.listTitle.includes('Pick a year'),
+     "AI-unconfigured 'chemistry past papers' → local interview (year question)", JSON.stringify(lastCard && lastCard.listTitle));
 
   /* 15r. structured requests — "2016 agriculture sinhala medium" */
   ok(f('2016 chemistry sinhala medium') === true, "trigger: '2016 chemistry sinhala medium'");

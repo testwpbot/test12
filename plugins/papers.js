@@ -508,7 +508,18 @@ function classifyAll(index) {
   let m = clsCache.get(index);
   if (!m) {
     m = new Map();
-    for (const f of (index.files || [])) m.set(f, classifyFileName(f.name));
+    for (const f of (index.files || [])) {
+      const c = classifyFileName(f.name);
+      // fall back to the FOLDER PATH for files named without year/subject
+      // (e.g. Chemistry_PP1.pdf sitting in 2021/Physics/)
+      if (!c.year) {
+        for (const seg of (f.path || [])) {
+          if (/^(19|20)\d{2}$/.test(String(seg))) { c.year = parseInt(seg, 10); break; }
+        }
+      }
+      if (!c.subject) c.subject = subjectFromTokens((f.path || []).slice(1));
+      m.set(f, c);
+    }
     clsCache.set(index, m);
   }
   return m;
@@ -614,7 +625,9 @@ async function askMissing(sock, mek, m, ctx, st, index) {
       return;
     } catch (e) { console.error('papers: question card failed:', e.message || e); }
   }
-  return ctx.reply(body);
+  // no card support → list the options as text
+  const opts = rows.map((r) => `• ${r.title}`).join('\n');
+  return ctx.reply(`${body}\n${opts}`);
 }
 
 /** Merge request details into the student's interview; ask or resolve. */
@@ -644,6 +657,24 @@ async function startOrContinuePaperRequest(sock, mek, m, ctx, q) {
   }
   interviews[sk] = st;
   return askMissing(sock, mek, m, ctx, st, index);
+}
+
+/** Extract request dimensions from any text WITHOUT AI (local brain). */
+function dimsFromText(text) {
+  const toks = String(text || '').toLowerCase()
+    .replace(/[^\p{L}\p{N}\s/]+/gu, ' ').split(/\s+/).filter(Boolean);
+  const out = { year: null, subject: null, medium: null, type: null };
+  for (const t of toks) {
+    if (/^(19|20)\d{2}$/.test(t)) out.year = parseInt(t, 10);
+    for (const [k, v] of Object.entries(MEDIUMS)) {
+      if (v.tokens.includes(t)) { out.medium = k; break; }
+    }
+  }
+  out.subject = subjectFromTokens(toks);
+  for (const [k, ws] of Object.entries(TYPE_WORDS)) {
+    if (toks.some((t) => ws.includes(t))) { out.type = k; break; }
+  }
+  return out;
 }
 
 /** Parse a chat answer for the pending question ("2020", "sinhala", …). */
@@ -827,6 +858,12 @@ const papersCommand = cmd({
     const structured = parsePaperQuery(query);
     if (structured && structured.year && (structured.subject || structured.medium)) {
       return startOrContinuePaperRequest(sock, mek, m, ctx, structured);
+    }
+    // incomplete subject ask ("papers chemistry") → interview as well —
+    // students must never get a loose multi-page dump for a subject query
+    const dimsQ = dimsFromText(query);
+    if (dimsQ.subject && !(dimsQ.year && dimsQ.medium)) {
+      return startOrContinuePaperRequest(sock, mek, m, ctx, dimsQ);
     }
 
     // a folder name (top-level or inside the current folder) always wins —
@@ -1208,13 +1245,12 @@ cmd({
       // action 'none' / unusable → local fallback decides below
     }
 
-    // LOCAL FALLBACK (keys exhausted, AI down, or AI unsure): search with
-    // just the meaningful words — years, subjects, "al"
-    const rest = tokens
-      .filter((t) => !TRIGGER_WORDS.has(t) && !smart.STOPWORDS.has(t))
-      .filter((t) => /^\d{4}$/.test(t) || t === 'al' || isKnownWord(t.replace(/\//g, '')));
-    if (rest.length >= 1 && rest.length <= 4) {
-      return papersCommand.function(sock, mek, m, pass({ args: rest }));
+    // LOCAL FALLBACK (keys exhausted, AI down, or AI unsure): the local
+    // brain extracts year/subject/medium and ASKS for what's missing —
+    // never a loose multi-page dump.
+    const dims = dimsFromText(body);
+    if (dims.subject || dims.year) {
+      return startOrContinuePaperRequest(sock, mek, m, ctx, dims);
     }
     // nothing usable at all → teach the format
     return usageGuide(ctx);
