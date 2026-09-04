@@ -20,6 +20,7 @@ const config = require('../config');
 const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
 const { isTapResponse } = require('../lib/msg');
+const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS } = require('../lib/papersearch');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
@@ -342,7 +343,8 @@ function cardTitle(resolved) {
 }
 
 async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
-  const resolved = await resolveView(view);
+  // pre-resolved direct result lists (structured multi-match) page as-is
+  const resolved = view.kind === 'direct' ? view.resolved : await resolveView(view);
 
   // empty result → simple text message (no interactive card), and keep any
   // previous numbered list valid so ".paper N" still works for the student.
@@ -492,6 +494,68 @@ async function downloadEntry(sock, mek, ctx, entry) {
   });
 }
 
+/* ── structured requests — "2016 chemistry sinhala medium" ───────────── */
+function usageGuide(ctx) {
+  const words = Object.values(SUBJECTS).map((s) => s.label);
+  const shorts = 'chem • phy • bio • com maths • agri • econ • bs • acc • ict • et • sft • bst • stat';
+  return ctx.reply(
+    `📖 *How to ask for a paper*\n\n` +
+    `Type: *Year + Subject + Medium*\n` +
+    `Example: *2016 chemistry sinhala medium*\n\n` +
+    `🔤 Short terms: ${shorts}\n` +
+    `🌐 Mediums: sinhala • english • tamil\n\n` +
+    `📚 Or send *papers* to browse the full menu (${words.length} subjects)`
+  );
+}
+
+async function directPaperRequest(sock, mek, ctx, q) {
+  const { index, degraded } = await getIndex();
+  const subLabel = SUBJECTS[q.subject] ? SUBJECTS[q.subject].label : q.subjectRaw;
+  const medLabel = MEDIUMS[q.medium] ? MEDIUMS[q.medium].label : q.medium;
+  const label = `${q.year} ${subLabel} — ${medLabel} medium`;
+
+  const matches = q.subject ? matchPaper(index, q) : [];
+
+  if (matches.length === 1) {
+    return downloadEntry(sock, mek, ctx, matches[0]);
+  }
+
+  if (matches.length > 1) {
+    // several variants (MCQ/essay/etc.) — numbered list, "paper N" works
+    pruneState();
+    const shown = matches.slice(0, 10);
+    const resolved = {
+      title: `📚 *${label}* — ${matches.length} paper${matches.length === 1 ? '' : 's'} found`,
+      items: matches, isSearch: true, degraded
+    };
+    lastList[skey(ctx)] = { view: { kind: 'direct', resolved }, title: resolved.title, items: matches, page: 1, pages: 1, at: Date.now() };
+    let text = `📚 *${matches.length} papers matched* — ${label}:\n\n`;
+    shown.forEach((it, i) => {
+      text += `${i + 1}. 📄 ${cleanName(it.name)}${it.size ? ` _(${fmtSize(it.size)})_` : ''}\n`;
+    });
+    if (matches.length > shown.length) text += `…and ${matches.length - shown.length} more\n`;
+    text += `\n📥 Reply with *paper 1* – *${Math.min(matches.length, shown.length)}* to download`;
+    return ctx.reply(text);
+  }
+
+  // not found — is the year itself in the library? then hint the subjects
+  const yearFolder = index.folders.find((f) => (f.path || []).some((n) => String(n).includes(String(q.year))));
+  let hint = '';
+  if (yearFolder) {
+    const depth = yearFolder.path.length;
+    const subs = [...new Set(index.folders
+      .filter((f) => f.path.length === depth + 1 && f.path[depth - 1] === yearFolder.path[depth - 1])
+      .map((f) => f.path[depth]))].slice(0, 8);
+    if (subs.length) hint = `\n📚 In *${q.year}* we have: ${subs.join(', ')}`;
+  }
+  return ctx.reply(
+    `❌ *Paper not found:* ${label}\n` +
+    `That combination isn't in the library yet.${hint}\n\n` +
+    `💡 Try another medium, or send *papers* to browse 📂` +
+    (degraded ? '\n⚠️ _Saved copy shown — Drive unreachable right now._' : '')
+  );
+}
+
 /* ── .papers — browse / search ───────────────────────────────────────── */
 const papersCommand = cmd({
   pattern: 'papers',
@@ -555,6 +619,12 @@ const papersCommand = cmd({
       // sub-folder position. (back/next still work within an active browse.)
       delete browse[sk];
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
+    }
+
+    // structured request first: ".papers 2016 chemistry sinhala medium"
+    const structured = parsePaperQuery(query);
+    if (structured && structured.subject) {
+      return directPaperRequest(sock, mek, ctx, structured);
     }
 
     // a folder name (top-level or inside the current folder) always wins —
@@ -661,6 +731,12 @@ const paperCommand = cmd({
       return downloadEntry(sock, mek, ctx, entry);
     }
 
+    // structured request: ".paper 2016 chem sinhala"
+    const structured = parsePaperQuery(arg);
+    if (structured && structured.subject) {
+      return directPaperRequest(sock, mek, ctx, structured);
+    }
+
     // by name — prefer the current list, then search everything
     let entry = null;
     if (last && Date.now() - last.at <= LIST_TTL) {
@@ -736,6 +812,12 @@ cmd({
       const squashed = norm.replace(/\s+/g, '');
       if (['papers', 'pastpapers', 'pastpaper', 'alpastpapers', 'alpapers'].includes(squashed)) return true;
 
+      // STRUCTURED request: "2016 chemistry sinhala medium" (short terms &
+      // typos welcome). Triggers even when the subject is unknown, so the
+      // student gets the usage guide instead of silence.
+      const sq = smart.parsePaperQuery(norm);
+      if (sq && (sq.subject || sq.hasMediumNoun)) return true;
+
       // "papers …" — next/prev/home/back/numbers/queries
       if (tokens[0] === 'papers') {
         const rest = tokens.slice(1);
@@ -795,10 +877,25 @@ cmd({
     if (tokens[0] === 'paper') {
       return paperCommand.function(sock, mek, m, pass({ args: tokens.slice(1) }));
     }
-    // "<subject> past papers" → search for <subject>
-    let rest = tokens.filter((t) => !TRIGGER_WORDS.has(t) && !smart.STOPWORDS.has(t));
-    rest = rest.map((t) => (t === 'a/l' ? 'al' : t)).slice(0, 4);
-    return papersCommand.function(sock, mek, m, pass({ args: rest }));
+    // "paper <words>" — numbers open the list item; structured queries
+    // ("paper 2016 chem sinhala") go through the .paper command
+    if (tokens[0] === 'paper') {
+      const rest = tokens.slice(1);
+      const sp = smart.parsePaperQuery(rest.join(' '));
+      if (sp && sp.subject) {
+        return paperCommand.function(sock, mek, m, pass({ args: rest }));
+      }
+      return usageGuide(ctx);
+    }
+
+    // STRUCTURED request → "2016 chemistry sinhala medium" → direct download
+    const parsed = smart.parsePaperQuery(body);
+    if (parsed && parsed.subject && parsed.medium) {
+      return directPaperRequest(sock, mek, ctx, parsed);
+    }
+
+    // any other papers-ish text → teach the Year + Subject + Medium format
+    return usageGuide(ctx);
   } catch (e) {
     console.error('papers no-prefix handler error:', e.message || e);
     try {

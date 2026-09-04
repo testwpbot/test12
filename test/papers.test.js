@@ -19,11 +19,17 @@ const DOC = { id: 'FILEDOCSaaaaaaaaaaaaaaa', name: 'Syllabus Notes', mimeType: '
 const DP = f('FILEDEEPaaaaaaaaaaaaaaa', 'DEEP_Paper.pdf', 1024 * 1024);
 const LONG = f('FILELONGaaaaaaaaaaaaaaa', 'Business_Studies_Structured_Essay_Paper_2021_GCE_AL_New_Syllabus.pdf', 4 * 1024 * 1024);
 
+const A16MCQ = f('FILE16AG1aaaaaaaaaaaaaa', '2016_Agriculture_MCQ_Sinhala_Medium.pdf', 1024 * 1024);
+const A16ESS = f('FILE16AG2aaaaaaaaaaaaaa', '2016_Agriculture_Essay_Sinhala.pdf', 1024 * 1024);
+const A16ENG = f('FILE16AG3aaaaaaaaaaaaaa', '2016_Agriculture_English_Medium.pdf', 2 * 1024 * 1024);
+
 const TREE = {
-  ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021'), d('FOLDEREMPTYaaaaaaaaaaaaa', 'Empty')],
+  ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021'), d('FOLDER2016aaaaaaaaaaaaaa', '2016'), d('FOLDEREMPTYaaaaaaaaaaaaa', 'Empty')],
   FOLDER2021aaaaaaaaaaaaaa: [d('FOLDERPHYaaaaaaaaaaaaaaa', 'Physics'), C1, C2, DOC, H1, LONG],
   FOLDERPHYaaaaaaaaaaaaaaa: [P1],
   FOLDER2020aaaaaaaaaaaaaa: [M1],
+  FOLDER2016aaaaaaaaaaaaaa: [d('FOLDERAG16aaaaaaaaaaaaaaa', 'Agriculture')],
+  FOLDERAG16aaaaaaaaaaaaaaa: [A16MCQ, A16ESS, A16ENG],
   FOLDERPHYaaaaaaaaaaaaaaa_: [DP] // unreachable decoy (id not referenced)
 };
 // deep chain: 2021/Physics already above; extend Physics with a subfolder
@@ -476,13 +482,56 @@ const ok = (cond, name, extra) => {
   lastCard = null;
   await np.function(sock, mek, mCard, { from: 'NP@g.us', body: 'papers', reply: async (t) => { sent.push({ reply: t }); } });
   ok(lastCard && lastCard.title.includes('AI Mate Papers'), "typing 'papers' opens main menu card", lastCard && lastCard.title);
-  // 'chemistry past papers' opens a search card
+  // 'chemistry past papers' → usage guide (structured format is the only
+  // paper path now); NO card, just text teaching Year + Subject + Medium
+  sent = [];
   lastCard = null;
   await np.function(sock, mek, mCard, { from: 'NP2@g.us', body: 'chemistry past papers', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(lastCard && lastCard.text.includes('chemistry') && lastCard.listTitle.includes('Pick a result'),
-     "'chemistry past papers' shows search results card", lastCard && lastCard.text.slice(0, 80));
-  ok(lastCard && lastCard.sections.length === 1,
-     'search card is LIST-ONLY too', JSON.stringify(lastCard && lastCard.sections.map((s) => s.title)));
+  const guide = sent.map((s) => s.reply).join('\n');
+  ok(guide.includes('Year + Subject + Medium') && guide.includes('2016 chemistry sinhala medium'),
+     "'chemistry past papers' gets the usage guide with example", guide.slice(0, 120));
+  ok(lastCard === null, 'guide is plain text, not a card');
+
+  /* 15r. structured requests — "2016 agriculture sinhala medium" */
+  ok(f('2016 chemistry sinhala medium') === true, "trigger: '2016 chemistry sinhala medium'");
+  ok(f('2022 physics english') === true, "trigger: '2022 physics english' (medium word optional)");
+  ok(f('2021 combined maths sinhala mediam') === true, 'trigger: multi-word subject + typo medium');
+  ok(f('2016 xyzabc sinhala medium') === true, 'trigger: year+medium but unknown subject → guide');
+  ok(f('2016 xyzabc sinhala') === false, 'unknown subject and no medium word → no trigger');
+  ok(f('2021 chem') === false, 'year+subject without medium → no trigger');
+
+  // direct hit — full paper name with medium, downloads the document
+  sent = [];
+  await np.function(sock, mek, mCard, { from: 'SR1@g.us', body: '2016 agriculture english medium', sender: '94778000001@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  await drain();
+  ok(docs().some((d) => d.content.fileName && d.content.fileName.includes('2016_Agriculture_English')),
+     'structured query downloads the matching paper', JSON.stringify(docs().map((d) => d.content.fileName)));
+  ok(sent.some((s) => s.content && s.content.react && (s.content.react.text === '⏳' || s.content.react.text === '✅')),
+     'structured download reacts ⏳/✅');
+
+  // short terms + typo ("mediam") + multi-match → numbered list, paper N hint
+  sent = [];
+  await np.function(sock, mek, mCard, { from: 'SR2@g.us', body: '2016 agri sin mediam', sender: '94778000002@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  const multi = sent.map((s) => s.reply).join('\n');
+  ok(multi.includes('2 papers matched') && multi.includes('2016_Agriculture_MCQ_Sinhala_Medium.pdf') && multi.includes('2016_Agriculture_Essay_Sinhala.pdf'),
+     'short terms + typos: 2 matches listed', multi.slice(0, 160));
+  ok(multi.includes('paper 1'), 'multi-match tells the student to reply paper N');
+
+  // not found — year exists in library → hint with available subjects
+  sent = [];
+  await np.function(sock, mek, mCard, { from: 'SR3@g.us', body: '2016 chemistry sinhala medium', reply: async (t) => { sent.push({ reply: t }); } });
+  const nf = sent.map((s) => s.reply).join('\n');
+  ok(nf.includes('Paper not found') && nf.includes('2016 Chemistry — Sinhala medium'),
+     'not-found message names the requested combo', nf.slice(0, 140));
+  ok(nf.includes('Agriculture'), 'not-found hints the subjects available that year');
+
+  // prefixed structured query through .papers
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SR4@g.us', args: ['2016', 'agri', 'eng', 'medium'], sender: '94778000003@s.whatsapp.net' }));
+  await drain();
+  ok(docs().some((d) => d.content.fileName && d.content.fileName.includes('2016_Agriculture_English')),
+     "'.papers 2016 agri eng medium' also resolves directly");
+
 
   // reaction + delegation: 'papers' reacts to the student's message
   sent = [];
@@ -604,9 +653,9 @@ const ok = (cond, name, extra) => {
   r = lastReply();
   ok(r.includes('AI Mate Papers*  (page') && r.includes('2020') && r.includes('2021') && !r.includes('/ Physics'),
      'B gets the ROOT menu, not A\'s folder view', r);
-  // B has their OWN numbered list (root: 2 folders) — A's 1-item list must not leak
+  // B has their OWN numbered list (root folders incl. new 2016) — A's list must not leak
   await paperCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['99'], ...B }));
-  ok(lastReply().includes('this list has 3 item'), "B's list is B's own (root: 3 folders, not A's Physics view)", lastReply());
+  ok(lastReply().includes('this list has 4 item'), "B's list is B's own (root: 4 folders, not A's Physics view)", lastReply());
   // A's position is intact for A
   sent = [];
   await paperCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['2'], ...A }));  // folders first → P1 is item 2
