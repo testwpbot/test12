@@ -559,10 +559,17 @@ async function sendPickCard(sock, mek, m, ctx, resolved, listTitle) {
 async function directPaperRequest(sock, mek, m, ctx, q) {
   const { index, degraded } = await getIndex();
   const subLabel = SUBJECTS[q.subject] ? SUBJECTS[q.subject].label : q.subjectRaw;
-  const medLabel = MEDIUMS[q.medium] ? MEDIUMS[q.medium].label : q.medium;
-  const label = `${q.year} ${subLabel} — ${medLabel} medium`;
+  const medLabel = MEDIUMS[q.medium] ? MEDIUMS[q.medium].label : null;
+  const label = `${q.year}${subLabel ? ` ${subLabel}` : ''}` +
+    `${medLabel ? ` — ${medLabel} medium` : ''}`;
 
-  const matches = q.subject ? matchPaper(index, q) : [];
+  let matches = matchPaper(index, q);
+  if (!matches.length && (!q.subject || !q.medium)) {
+    // partial ask (e.g. no medium) — retry fuzzy WITHIN the year
+    // (searchIndex pins the year itself, so results stay inside it)
+    const kw = [q.year, subLabel, medLabel].filter(Boolean).join(' ');
+    matches = smart.searchIndex(index, kw).items.filter((it) => !it._folder && !it.isFolder).slice(0, 30);
+  }
 
   if (matches.length >= 1) {
     // one or many — always a BUTTON card with the paper filename(s);
@@ -970,24 +977,8 @@ cmd({
     if (index) {
       const interp = await smart.aiInterpret(ctx.body, index);
       if (interp && interp.action === 'find') {
-        if (interp.year && interp.subject && interp.medium) {
-          return directPaperRequest(sock, mek, m, ctx, interp);
-        }
-        const parts = [interp.year,
-          interp.subject && SUBJECTS[interp.subject].label,
-          interp.medium && MEDIUMS[interp.medium].label].filter(Boolean);
-        const res = smart.searchIndex(index, parts.join(' '));
-        if (res.items.length > 0) {
-          return sendPickCard(sock, mek, m, ctx, {
-            title: `📚 *${parts.join(' ')}* — ${res.items.length} found`,
-            items: res.items.slice(0, 150), isSearch: true, degraded: false
-          }, '📥 Pick a paper…');
-        }
-        return ctx.reply(
-          `❌ *Paper not found:* ${parts.join(' ')}\n` +
-          `That combination isn't in the library yet.\n` +
-          `💡 Send *papers* to browse 📂`
-        );
+        // strict year+subject(+medium) match — never a loose keyword search
+        return directPaperRequest(sock, mek, m, ctx, interp);
       }
       if (interp && interp.action === 'search') {
         const res = smart.searchIndex(index, interp.keywords);

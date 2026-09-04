@@ -479,13 +479,52 @@ const ok = (cond, name, extra) => {
   await drain();
   ok(docs().some((d) => d.content.fileName && d.content.fileName.includes('2020_Chemistry_Sinhala')),
      'tapping the AI-found paper downloads it', JSON.stringify(docs().map((d) => d.content.fileName)));
-  // find with missing medium → keyword search fallback card
+  // find with missing medium → STRICT year+subject card (never loose search)
   global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":null}';
   sent = [];
   ffCard = null;
-  await npFF.function(sock, mek, ffM, { from: 'FF2@g.us', body: '2020 chemistry paper', reply: async (t) => { sent.push({ reply: t }); } });
-  ok((ffCard && ffCard.text.includes('found')) || sent.map((s) => s.reply).join('').includes('found'),
-     'partial find (no medium) → search results', JSON.stringify(ffCard && ffCard.text));
+  await npFF.function(sock, mek, ffM, { from: 'FF2@g.us', body: 'Biology 2020 past paper'.replace('Biology', 'chemistry'), reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
+     'partial find (no medium) → strictly 2020 chemistry only', JSON.stringify(ffCard && ffCard.sections));
+
+  // 'Biology 2020 past paper' — AI says 2020 biology; none in the library
+  // → NOT-FOUND (never 64 loose results from other years)
+  global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"biology","medium":null}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FF6@g.us', body: 'Biology 2020 past paper', reply: async (t) => { sent.push({ reply: t }); } });
+  const nfBio = sent.map((s) => s.reply).join('\n');
+  ok(!ffCard && nfBio.includes('Paper not found') && nfBio.includes('2020 Biology'),
+     "'Biology 2020 past paper' with no 2020 biology → clean not-found", nfBio.slice(0, 120));
+
+  // YEAR PIN in the search engine: 'biology 2020' can never return 2016 biology
+  const scopeIdx = (await (async () => {
+    await papersCmd.function(sock, mek, {}, ctx({ from: 'YP@g.us', args: ['2021'] }));
+    return null;
+  })());
+  const siRes = require('../lib/papersearch').searchIndex(
+    { root: { name: 'School Papers' }, folders: [
+      { id: 'f1', name: '2020', path: ['School Papers', '2020'], depth: 1 },
+      { id: 'f2', name: 'Biology', path: ['School Papers', '2016', 'Biology'], depth: 2 }
+    ], files: [
+      { id: 'a', name: '2016_Biology_MCQ_Sinhala.pdf', isFolder: false, path: ['School Papers', '2016', 'Biology'] },
+      { id: 'b', name: '2020_Physics_English.pdf', isFolder: false, path: ['School Papers', '2020'] },
+      { id: 'c', name: '2020_Chemistry_Sinhala_Medium.pdf', isFolder: false, path: ['School Papers', '2020'] }
+    ] }, 'biology 2020');
+  ok(siRes.items.length === 0, "YEAR PIN: 'biology 2020' never returns 2016 biology", JSON.stringify(siRes.items.map((x) => x.name)));
+  const siRes2 = require('../lib/papersearch').searchIndex(
+    { root: { name: 'School Papers' }, folders: [], files: [
+      { id: 'a', name: '2016_Biology_MCQ_Sinhala.pdf', isFolder: false, path: ['School Papers', '2016', 'Biology'] },
+      { id: 'b', name: '2020_Biology_English_Medium.pdf', isFolder: false, path: ['School Papers', '2020'] }
+    ] }, 'biology 2020');
+  ok(siRes2.items.length === 1 && siRes2.items[0].name.includes('2020_Biology'),
+     "YEAR PIN: 'biology 2020' returns exactly the 2020 biology", JSON.stringify(siRes2.items.map((x) => x.name)));
+
+  // classifier: real-world drive names like '2015-Bio-Resource-Technology-English.pdf'
+  const cf2 = require('../lib/papersearch').classifyFileName;
+  ok(cf2('2015-Bio-Resource-Technology-English.pdf').subject === 'bst',
+     'classifier: Bio Resource Technology → bst', JSON.stringify(cf2('2015-Bio-Resource-Technology-English.pdf')));
   // search action
   global.AI_INTERPRET = '{"action":"search","keywords":"chemistry"}';
   sent = [];
