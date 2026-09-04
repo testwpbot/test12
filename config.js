@@ -31,6 +31,9 @@ const SETTINGS = {
   PAPERS_COOLDOWN_SEC: "30",
   PAPERS_CACHE_MIN: "10",
   GEMINI_API_KEY: "",
+  GEMINI_API_KEYS: "",
+  GEMINI_MODEL: "gemini-2.5-flash-lite",
+  AI_DAILY_CAP: "500",
   PAPERS_ROOT_NAME: "AI Mate Papers",
   PAPERS_NO_PREFIX: "true",
   WELCOME_NEW_MEMBERS: "true",
@@ -151,6 +154,24 @@ const SETTINGS_META = {
     desc: 'AI-powered smart search for .papers (free at aistudio.google.com)',
     type: 'text',
     validate: (v) => (!v.trim() || v.trim().length >= 20 ? true : 'That API key looks too short.')
+  },
+  GEMINI_API_KEYS: {
+    label: 'Gemini spare keys',
+    desc: 'Backup AI keys, comma separated — auto-used when the first runs out',
+    type: 'text',
+    validate: () => true
+  },
+  GEMINI_MODEL: {
+    label: 'Gemini model',
+    desc: 'Advanced — default gemini-2.5-flash-lite (free-tier fast model)',
+    type: 'text',
+    validate: (v) => (!v.trim() || /^[a-z0-9.\-]+$/.test(v.trim()) ? true : 'Model names look like gemini-2.5-flash-lite.')
+  },
+  AI_DAILY_CAP: {
+    label: 'AI daily cap per key',
+    desc: 'Max AI searches per key per day (0 = unlimited; default 500)',
+    type: 'text',
+    validate: (v) => (/^\d+$/.test(v) ? true : 'Use a number, e.g. 500 (0 = unlimited).')
   },
   PAPERS_ROOT_NAME: {
     label: 'Papers menu name',

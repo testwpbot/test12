@@ -79,9 +79,18 @@ const axiosStub = {
   },
   post: async (url) => {
     if (url.includes('generativelanguage.googleapis.com')) {
-      if (global.AI_DOWN) { const e = new Error('ai down'); e.response = { status: 503 }; throw e; }
+      const keyM = url.match(/key=([^&]+)/);
+      const tail = keyM ? decodeURIComponent(keyM[1]).slice(-6) : '?';
+      global.AI_KEY_CALLS = global.AI_KEY_CALLS || {};
+      global.AI_KEY_CALLS[tail] = (global.AI_KEY_CALLS[tail] || 0) + 1;
       global.AI_CALLS = (global.AI_CALLS || 0) + 1;
-      return { data: { candidates: [{ content: { parts: [{ text: 'chemistry 2021' }] } }] } };
+      if (global.AI_DOWN) { const e = new Error('ai down'); e.response = { status: 503 }; throw e; }
+      if (global.AI_429_TAILS && global.AI_429_TAILS.includes(tail)) {
+        const e = new Error('Quota exceeded');
+        e.response = { status: 429, data: { error: { code: 429, message: 'RESOURCE_EXHAUSTED: quota exceeded' } } };
+        throw e;
+      }
+      return { data: { candidates: [{ content: { parts: [{ text: global.AI_EXPANSION || 'chemistry 2021' }] } }] } };
     }
     throw new Error('stub: no OAuth in tests');
   }
@@ -394,6 +403,57 @@ const ok = (cond, name, extra) => {
   ok(!lastReply().includes('✨ AI'), 'AI down → falls back silently');
   delete process.env.GEMINI_API_KEY;
   global.AI_DOWN = false;
+
+  /* 15t. AI key pool — auto fallback when a key is exhausted */
+  const smart = require('../lib/papersearch');
+  smart.geminiReset();
+  process.env.GEMINI_API_KEY = 'AIzaPOOLAAAA111111111111111';
+  process.env.GEMINI_API_KEYS = 'AIzaPOOLBBBB222222222222222, AIzaPOOLCCCC333333333333333';
+  global.AI_429_TAILS = ['111111'];
+  global.AI_KEY_CALLS = {};
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP1@g.us', args: ['රසායන'] }));
+  ok(global.AI_KEY_CALLS['111111'] === 1, 'key 1 tried first', JSON.stringify(global.AI_KEY_CALLS));
+  ok(global.AI_KEY_CALLS['222222'] === 1, 'key 2 took over after the 429', JSON.stringify(global.AI_KEY_CALLS));
+  ok(!global.AI_KEY_CALLS['333333'], 'key 3 not wasted on that call');
+  ok(lastReply().includes('✨ AI'), 'fallback still delivered AI results', lastReply());
+  // exhausted key stays benched on later calls (rotation moves on by itself)
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP2@g.us', args: ['රසායන 2021'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP3@g.us', args: ['රසායන 2020'] }));
+  ok(global.AI_KEY_CALLS['111111'] === 1, 'exhausted key benched until reset — never retried', JSON.stringify(global.AI_KEY_CALLS));
+  delete global.AI_429_TAILS;
+  // all keys down → clean local fallback (no crash, empty-search text)
+  smart.geminiReset();
+  delete process.env.GEMINI_API_KEYS;
+  global.AI_DOWN = true;
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP4@g.us', args: ['රසායන විභාග'] }));
+  ok(lastReply().includes('No papers found'), 'all keys down → local empty-search text, no crash', lastReply());
+  global.AI_DOWN = false;
+  // per-key daily cap
+  config.set('AI_DAILY_CAP', '1');
+  smart.geminiReset();
+  global.AI_CALLS = 0;
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP5@g.us', args: ['රසායන'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP6@g.us', args: ['රසායන 2019'] }));
+  ok(global.AI_CALLS === 1, 'daily cap stops the second AI call', String(global.AI_CALLS));
+  config.set('AI_DAILY_CAP', '500');
+  // AI normalises into a STRUCTURED query → direct paper flow
+  smart.geminiReset();
+  global.AI_EXPANSION = '2019 chemistry sinhala medium';
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP7@g.us', args: ['රසායන 2019'] }));
+  ok(lastReply().includes('Paper not found') && lastReply().includes('2019 Chemistry — Sinhala medium'),
+     'AI-normalised query flows into the structured engine', lastReply());
+  delete process.env.GEMINI_API_KEY;
+  delete global.AI_EXPANSION;
+  smart.geminiReset();
+
+  /* 15u. local-first: AI is NOT spent when local search already matches */
+  process.env.GEMINI_API_KEY = 'AIzaLOCAL4444444444444444';
+  smart.geminiReset();
+  global.AI_CALLS = 0;
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP8@g.us', args: ['chem'] }));
+  ok(global.AI_CALLS === 0 && lastReply().includes('2 found'), 'local hit → zero AI calls', String(global.AI_CALLS));
+  delete process.env.GEMINI_API_KEY;
+  smart.geminiReset();
 
   /* 15e. full file names + contextual picker button */
   sent = [];

@@ -698,18 +698,33 @@ const papersCommand = cmd({
       return showView(sock, mek, m, ctx, last.view, parseInt(query, 10));
     }
 
-    // optional AI expansion (Gemini) — translates/normalises, then the local
-    // engine still does the matching. Silently skipped when not configured.
-    let finalQuery = query;
-    let ai = false;
+    // Non-Latin (Sinhala/Tamil) queries: the local tokenizer would strip the
+    // words and leave a bare year, so go STRAIGHT to AI normalisation.
+    const isNonLatinQuery = /[^a-zA-Z0-9\s]/.test(query);
+    // Latin queries: LOCAL search first — AI quota is only spent on dead ends
+    if (!isNonLatinQuery) {
+      const local = smart.searchIndex(index, query);
+      if (local.items.length > 0) {
+        return showView(sock, mek, m, ctx, { kind: 'search', query, original: query }, 1);
+      }
+    }
+    // AI rescue (Gemini): translate/normalise, then the local engine still
+    // picks the files. Silently skipped when no key/quota is available.
     if (query.length <= 80) {
       const expanded = await smart.aiExpand(query);
       if (expanded) {
-        finalQuery = expanded;
-        ai = true;
+        const pq = parsePaperQuery(expanded);
+        if (pq && pq.subject) return directPaperRequest(sock, mek, m, ctx, pq);
+        const res = smart.searchIndex(index, expanded);
+        if (res.items.length > 0) {
+          return showView(sock, mek, m, ctx, { kind: 'search', query: expanded, original: query, ai: true }, 1);
+        }
       }
     }
-    return showView(sock, mek, m, ctx, { kind: 'search', query: finalQuery, original: query, ai }, 1);
+    if (isNonLatinQuery) {
+      return showView(sock, mek, m, ctx, { kind: 'search', query, original: query, ai: false }, 1);
+    }
+    return showView(sock, mek, m, ctx, { kind: 'search', query, original: query }, 1);
   } catch (e) {
     console.error('papers list error:', e.message || e);
     if (e && e.code === 'NOT_CONFIGURED') {
@@ -783,7 +798,16 @@ const paperCommand = cmd({
     }
     if (!entry) {
       const index = (await getIndex()).index;
-      const res = smart.searchIndex(index, arg);
+      let res = smart.searchIndex(index, arg);
+      if (res.items.length === 0 && arg.length <= 80) {
+        // AI rescue — translate/normalise, then retry the local matcher
+        const expanded = await smart.aiExpand(arg);
+        if (expanded) {
+          const pq = parsePaperQuery(expanded);
+          if (pq && pq.subject) return directPaperRequest(sock, mek, m, ctx, pq);
+          res = smart.searchIndex(index, expanded);
+        }
+      }
       if (res.items.length === 0) {
         return reply(
           `🔍 *Nothing matched "${arg}"* 🤔\n\n` +
