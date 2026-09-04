@@ -22,14 +22,18 @@ const LONG = f('FILELONGaaaaaaaaaaaaaaa', 'Business_Studies_Structured_Essay_Pap
 const A16MCQ = f('FILE16AG1aaaaaaaaaaaaaa', '2016_Agriculture_MCQ_Sinhala_Medium.pdf', 1024 * 1024);
 const A16ESS = f('FILE16AG2aaaaaaaaaaaaaa', '2016_Agriculture_Essay_Sinhala.pdf', 1024 * 1024);
 const A16ENG = f('FILE16AG3aaaaaaaaaaaaaa', '2016_Agriculture_English_Medium.pdf', 2 * 1024 * 1024);
+const A16SIN = f('FILE16AG4aaaaaaaaaaaaaa', '2016_Agriculture_Sinhala.pdf', 1024 * 1024);
+const B16MCQ = f('FILE16BI1aaaaaaaaaaaaaa', '2016_Biology_MCQ_Sinhala.pdf', 1024 * 1024);
+const B16ESS = f('FILE16BI2aaaaaaaaaaaaaa', '2016_Biology_Structured_Sinhala.pdf', 1024 * 1024);
 
 const TREE = {
   ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021'), d('FOLDER2016aaaaaaaaaaaaaa', '2016'), d('FOLDEREMPTYaaaaaaaaaaaaa', 'Empty')],
   FOLDER2021aaaaaaaaaaaaaa: [d('FOLDERPHYaaaaaaaaaaaaaaa', 'Physics'), C1, C2, DOC, H1, LONG],
   FOLDERPHYaaaaaaaaaaaaaaa: [P1],
   FOLDER2020aaaaaaaaaaaaaa: [M1],
-  FOLDER2016aaaaaaaaaaaaaa: [d('FOLDERAG16aaaaaaaaaaaaaaa', 'Agriculture')],
-  FOLDERAG16aaaaaaaaaaaaaaa: [A16MCQ, A16ESS, A16ENG],
+  FOLDER2016aaaaaaaaaaaaaa: [d('FOLDERAG16aaaaaaaaaaaaaaa', 'Agriculture'), d('FOLDERBI16aaaaaaaaaaaaaaa', 'Biology')],
+  FOLDERAG16aaaaaaaaaaaaaaa: [A16MCQ, A16ESS, A16ENG, A16SIN],
+  FOLDERBI16aaaaaaaaaaaaaaa: [B16MCQ, B16ESS],
   FOLDERPHYaaaaaaaaaaaaaaa_: [DP] // unreachable decoy (id not referenced)
 };
 // deep chain: 2021/Physics already above; extend Physics with a subfolder
@@ -500,6 +504,12 @@ const ok = (cond, name, extra) => {
   ok(f('2016 xyzabc sinhala') === false, 'unknown subject and no medium word → no trigger');
   ok(f('2021 chem') === false, 'year+subject without medium → no trigger');
 
+  // filename classifier: strict year token, variant detection
+  const cf = require('../lib/papersearch').classifyFileName;
+  ok(cf('2019_Chemistry_Sinhala_Medium.pdf').extra.length === 0, 'classifier: year+subject+medium = exact', JSON.stringify(cf('2019_Chemistry_Sinhala_Medium.pdf')));
+  ok(cf('2019 Chemistry Sinhala MCQ.pdf').extra.join() === 'mcq', 'classifier: MCQ sibling is a variant');
+  ok(cf('20190_notes.pdf').year === null, 'classifier: 20190 is NOT a year (no substring years)');
+
   // direct hit — full paper name with medium, downloads the document
   sent = [];
   await np.function(sock, mek, mCard, { from: 'SR1@g.us', body: '2016 agriculture english medium', sender: '94778000001@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
@@ -509,12 +519,21 @@ const ok = (cond, name, extra) => {
   ok(sent.some((s) => s.content && s.content.react && (s.content.react.text === '⏳' || s.content.react.text === '✅')),
      'structured download reacts ⏳/✅');
 
-  // short terms + typo ("mediam") + multi-match → numbered list, paper N hint
+  // short terms + typo ("mediam") → EXACT-named file wins over MCQ/essay
+  // siblings — one paper, downloaded straight away
   sent = [];
   await np.function(sock, mek, mCard, { from: 'SR2@g.us', body: '2016 agri sin mediam', sender: '94778000002@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  await drain();
+  const sr2docs = docs().map((d) => d.content.fileName).join('|');
+  ok(docs().length === 1 && sr2docs.includes('2016_Agriculture_Sinhala.pdf'),
+     'exact name beats MCQ/essay variants — THE paper only', sr2docs);
+
+  // variants-only combo → numbered list, paper N hint
+  sent = [];
+  await np.function(sock, mek, mCard, { from: 'SR5@g.us', body: '2016 bio sinhala', sender: '94778000004@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   const multi = sent.map((s) => s.reply).join('\n');
-  ok(multi.includes('2 papers matched') && multi.includes('2016_Agriculture_MCQ_Sinhala_Medium.pdf') && multi.includes('2016_Agriculture_Essay_Sinhala.pdf'),
-     'short terms + typos: 2 matches listed', multi.slice(0, 160));
+  ok(multi.includes('2 papers matched') && multi.includes('2016_Biology_MCQ_Sinhala.pdf') && multi.includes('2016_Biology_Structured_Sinhala.pdf'),
+     'variants-only combo lists the siblings', multi.slice(0, 160));
   ok(multi.includes('paper 1'), 'multi-match tells the student to reply paper N');
 
   // not found — year exists in library → hint with available subjects
