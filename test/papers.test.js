@@ -393,15 +393,15 @@ const ok = (cond, name, extra) => {
   ok(lastReply().includes('zzzfolder') || lastReply().includes('Nothing matched') || lastReply().includes('No papers found'),
      'unknown folder word → search fallback (no crash)', lastReply());
 
-  // AI expansion (Gemini mock): Sinhala query → english tokens
+  // AI expansion (Gemini mock): Sinhala phrase the local KB can't parse
   process.env.GEMINI_API_KEY = 'AIzaFAKEGEMINIKEY1234567890';
   global.AI_CALLS = 0;
   sent = [];
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS5@g.us', args: ['රසායන', '2021'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS5@g.us', args: ['මට', 'ඕනෙ', 'පත්රයක්'] }));
   r = lastReply();
-  ok(global.AI_CALLS >= 1, 'AI expansion endpoint called');
-  ok(r.includes('2021 Chemistry') && r.includes('Chemistry_PP1.pdf') && r.includes('2022') === false,
-     'AI-expanded query → structured 2021 chemistry pick card', r);
+  ok(global.AI_CALLS >= 1, 'AI expansion endpoint called (non-KB Sinhala phrase)');
+  ok(r.includes('2021 Chemistry') && r.includes('Chemistry_PP1.pdf'),
+     "AI-expanded 'chemistry 2021' → the papers directly (no medium tags in library)", r);
   // AI down → silent fallback to local search
   global.AI_DOWN = true;
   sent = [];
@@ -417,36 +417,36 @@ const ok = (cond, name, extra) => {
   process.env.GEMINI_API_KEYS = 'AIzaPOOLBBBB222222222222222, AIzaPOOLCCCC333333333333333';
   global.AI_429_TAILS = ['111111'];
   global.AI_KEY_CALLS = {};
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP1@g.us', args: ['රසායන'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP1@g.us', args: ['මට', 'පත්රයක්', 'ඕනෙ'] }));
   ok(global.AI_KEY_CALLS['111111'] === 1, 'key 1 tried first', JSON.stringify(global.AI_KEY_CALLS));
   ok(global.AI_KEY_CALLS['222222'] === 1, 'key 2 took over after the 429', JSON.stringify(global.AI_KEY_CALLS));
   ok(!global.AI_KEY_CALLS['333333'], 'key 3 not wasted on that call');
   ok(lastReply().includes('2021 Chemistry') && lastReply().includes('Chemistry_PP1.pdf'),
-     'fallback still delivered AI results (structured pick)', lastReply());
+     'fallback still delivered AI results (pick card)', lastReply());
   // exhausted key stays benched on later calls (rotation moves on by itself)
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP2@g.us', args: ['රසායන 2021'] }));
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP3@g.us', args: ['රසායන 2020'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP2@g.us', args: ['ඕනෙ', 'පත්ර'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP3@g.us', args: ['පත්රය', 'ඕනෙ'] }));
   ok(global.AI_KEY_CALLS['111111'] === 1, 'exhausted key benched until reset — never retried', JSON.stringify(global.AI_KEY_CALLS));
   delete global.AI_429_TAILS;
   // all keys down → clean local fallback (no crash, empty-search text)
   smart.geminiReset();
   delete process.env.GEMINI_API_KEYS;
   global.AI_DOWN = true;
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP4@g.us', args: ['රසායන විභාග'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP4@g.us', args: ['මට', 'ඕනෙ', 'පත්රයක්'] }));
   ok(lastReply().includes('No papers found'), 'all keys down → local empty-search text, no crash', lastReply());
   global.AI_DOWN = false;
   // per-key daily cap
   config.set('AI_DAILY_CAP', '1');
   smart.geminiReset();
   global.AI_CALLS = 0;
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP5@g.us', args: ['රසායන'] }));
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP6@g.us', args: ['රසායන 2019'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP5@g.us', args: ['මට', 'ඕනෙ', 'පත්රයක්'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP6@g.us', args: ['ඕනෙ', 'පත්ර', 'ඕනෙ'] }));
   ok(global.AI_CALLS === 1, 'daily cap stops the second AI call', String(global.AI_CALLS));
   config.set('AI_DAILY_CAP', '500');
   // AI normalises into a STRUCTURED query → direct paper flow
   smart.geminiReset();
   global.AI_EXPANSION = '2019 chemistry sinhala medium';
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP7@g.us', args: ['රසායන 2019'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP7@g.us', args: ['මට', 'ඕනෙ', 'පත්රයක්'] }));
   ok(lastReply().includes('Paper not found') && lastReply().includes('2019 Chemistry — Sinhala medium'),
      'AI-normalised query flows into the structured engine', lastReply());
   delete process.env.GEMINI_API_KEY;
@@ -498,7 +498,7 @@ const ok = (cond, name, extra) => {
   global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":"sinhala"}';
   sent = [];
   ffCard = null;
-  await npFF.function(sock, mek, ffM, { from: 'FF1b@g.us', body: 'රසායන 2020', sender: '94778111112@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  await npFF.function(sock, mek, ffM, { from: 'FF1b@g.us', body: 'ඕනෙ පත්රම ඕනෙ', sender: '94778111112@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   ok(ffCard && ffCard.sections[0].rows.length === 1 &&
      ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
      'AI find (full details) → exact paper card, no questions', JSON.stringify(ffCard && ffCard.sections));
@@ -535,7 +535,7 @@ const ok = (cond, name, extra) => {
   global.AI_INTERPRET = '{"action":"find","year":2016,"subject":"biology","medium":"sinhala","type":"mcq"}';
   sent = [];
   ffCard = null;
-  await npFF.function(sock, mek, ffM, { from: 'FFT2@g.us', body: 'ජීව විද්යාව 2016 mcq', sender: '94778111115@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  await npFF.function(sock, mek, ffM, { from: 'FFT2@g.us', body: 'ජීව විද්‍යාව 2016 sinhala mcq', sender: '94778111115@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   ok(ffCard && ffCard.sections[0].rows.length === 1 &&
      ffCard.sections[0].rows[0].title.includes('MCQ'),
      "type 'mcq' → only the MCQ sibling", JSON.stringify(ffCard && ffCard.sections));
@@ -590,6 +590,31 @@ const ok = (cond, name, extra) => {
     ] }, 'biology 2020');
   ok(siRes2.items.length === 1 && siRes2.items[0].name.includes('2020_Biology'),
      "YEAR PIN: 'biology 2020' returns exactly the 2020 biology", JSON.stringify(siRes2.items.map((x) => x.name)));
+
+  /* 15w. collections — past / FWC / provincial — any language */
+  const PS = require('../lib/papersearch');
+  const catIdx = { root: { name: 'X' }, folders: [], files: [
+    { name: '2019_Biology_Sinhala.pdf', isFolder: false, path: ['X', '2019'] },
+    { name: '2019 Biology FWC Sinhala.pdf', isFolder: false, path: ['X', 'FWC'] },
+    { name: '2019_Biology_Provincial_Sinhala.pdf', isFolder: false, path: ['X', 'Provincial'] }
+  ] };
+  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala' }).length === 3,
+     'no category asked → all collections offered');
+  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'fwc' }).length === 1 &&
+     PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'fwc' })[0].name.includes('FWC'),
+     "cat 'fwc' → only the FWC file");
+  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'provincial' })[0].name.includes('Provincial'),
+     "cat 'provincial' → only the provincial file");
+  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'past' })[0].name === '2019_Biology_Sinhala.pdf',
+     "cat 'past' → the plain paper (unmarked = past)");
+  const pqFwc = PS.parsePaperQuery('fwc 2019 bio sinhala');
+  ok(pqFwc && pqFwc.cat === 'fwc' && pqFwc.subject === 'biology', 'parse: fwc category extracted');
+  const pqPalath = PS.parsePaperQuery('2019 පළාත් ජීව විද්‍යාව sinhala');
+  ok(pqPalath && pqPalath.cat === 'provincial' && pqPalath.subject === 'biology',
+     'parse: පළාත් → provincial (Sinhala)');
+  const sinFile = PS.classifyFileName('2019 රසායන විද්‍යාව සිංහල.pdf');
+  ok(sinFile.subject === 'chemistry' && sinFile.medium === 'sinhala',
+     'classifier: Sinhala-named file fully understood');
 
   // classifier: real-world drive names like '2015-Bio-Resource-Technology-English.pdf'
   const cf2 = require('../lib/papersearch').classifyFileName;
