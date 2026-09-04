@@ -37,6 +37,7 @@ overridden with an environment variable of the same name.
 | `PAPERS_MAX_SIZE_MB` | `95` | Files bigger than this send a browser link instead |
 | `PAPERS_COOLDOWN_SEC` | `30` | Wait required between downloads per student |
 | `PAPERS_CACHE_MIN` | `10` | How long the saved Drive index stays fresh |
+| `GEMINI_API_KEY` | — | Optional: AI-powered query expansion for `.papers` search |
 
 `SESSION_ID` and `PORT` are read-only inside the bot (shown masked in the
 settings panel) — set them in `config.js` or as env vars.
@@ -127,6 +128,28 @@ prefers it automatically when present):
          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
      ```
 5. Restart the bot (or re-run the workflow).
+
+### 🔎 Smart search (how students find papers)
+
+Students don't need exact file names — the built-in knowledge base handles
+how students actually search:
+
+| Student types | Finds |
+| --- | --- |
+| `.papers chem 2021` | `chem` → **chemistry** (abbreviation) |
+| `.papers phy pp1` | `phy` → **physics**, `pp` → paper |
+| `.papers phisics` | typo auto-corrected to **physics** |
+| `.papers past papers chemistry` | filler words ignored |
+
+Results are ranked (name matches above folder-path matches), and if nothing
+matches all words, a **loose match** pass relaxes the least-important word.
+
+**Optional AI boost:** set a free Gemini key
+([aistudio.google.com/apikey](https://aistudio.google.com/apikey)) with
+`.settings set GEMINI_API_KEY …` and searches in **Sinhala/Tamil** or with
+unusual spelling are first expanded by AI ("රසායන 2021" → "chemistry 2021"),
+then matched locally. Without the key everything still works — the AI layer
+is pure enhancement, and failures fall back silently.
 
 ### Safety limits built in
 

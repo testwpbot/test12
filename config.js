@@ -29,7 +29,8 @@ const SETTINGS = {
   GDRIVE_FOLDER_ID: "11Sf5yQ7gHCu9Qby-hggGYz0YHhLuN6NW",
   PAPERS_MAX_SIZE_MB: "95",
   PAPERS_COOLDOWN_SEC: "30",
-  PAPERS_CACHE_MIN: "10"
+  PAPERS_CACHE_MIN: "10",
+  GEMINI_API_KEY: ""
 };
 
 /**
@@ -140,6 +141,12 @@ const SETTINGS_META = {
     type: 'text',
     validate: (v) => (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 720
       ? true : 'Use minutes between 1 and 720.')
+  },
+  GEMINI_API_KEY: {
+    label: 'Gemini AI key (optional)',
+    desc: 'AI-powered smart search for .papers (free at aistudio.google.com)',
+    type: 'text',
+    validate: (v) => (!v.trim() || v.trim().length >= 20 ? true : 'That API key looks too short.')
   }
 };
 

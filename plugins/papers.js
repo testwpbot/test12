@@ -18,6 +18,7 @@
 const { cmd } = require('../command');
 const config = require('../config');
 const gdrive = require('../lib/gdrive');
+const smart = require('../lib/papersearch');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
@@ -169,13 +170,7 @@ function fileNameFor(entry) {
 function pathLabel(pathNames) {
   return (pathNames || []).join(' / ');
 }
-function matchText(entry) {
-  return `${entry.name} ${pathLabel(entry.path)}`.toLowerCase();
-}
-function searchFiles(index, query) {
-  const tokens = String(query).toLowerCase().split(/\s+/).filter(Boolean);
-  return index.files.filter((f) => tokens.every((t) => matchText(f).includes(t)));
-}
+
 function countDirectChildren(index, folderPath) {
   const folders = index.folders.filter((f) =>
     f.path.length === folderPath.length + 1 && folderPath.every((n, i) => f.path[i] === n)).length;
@@ -201,8 +196,15 @@ async function resolveView(view) {
   const { index, degraded } = await getIndex();
 
   if (view.kind === 'search') {
-    const items = searchFiles(index, view.query).slice(0, 150);
-    return { title: `🔍 *" ${view.query}"* — ${items.length} found`, items, isSearch: true, degraded };
+    const res = smart.searchIndex(index, view.query);
+    const items = res.items.slice(0, 150);
+    const tags = [];
+    if (view.ai) tags.push('✨ AI');
+    if (res.relaxed) tags.push('loose match');
+    return {
+      title: `🔍 *" ${view.original || view.query}"* — ${items.length} found${tags.length ? ` · ${tags.join(' · ')}` : ''}`,
+      items, isSearch: true, degraded
+    };
   }
 
   const names = (view.pathNames && view.pathNames.length)
@@ -305,6 +307,28 @@ function cardTitle(resolved) {
 
 async function showView(sock, mek, m, ctx, view, page, offset = 0) {
   const resolved = await resolveView(view);
+
+  // empty result → simple text message (no interactive card), and keep any
+  // previous numbered list valid so ".paper N" still works for the student.
+  if (resolved.items.length === 0) {
+    if (view.kind === 'search') {
+      const q = view.original || view.query;
+      return ctx.reply(
+        `🔍 *No papers found for "${q}"* 🤔\n\n` +
+        `💡 Try fewer or shorter words — e.g. \`${config.PREFIX}papers chem 2021\`\n` +
+        `💡 Abbreviations & typos are OK — \`phy\`, \`bio\`, \`maths\`\n` +
+        `💡 Or browse everything: \`${config.PREFIX}papers\``
+      );
+    }
+    if (view.pathNames && view.pathNames.length > 1) {
+      return ctx.reply(
+        `📁 *No papers in this folder yet.*\n\n` +
+        `⬆️ Back: \`${config.PREFIX}papers back\`  |  🏠 Home: \`${config.PREFIX}papers\``
+      );
+    }
+    return ctx.reply('📚 The papers library is empty right now — check back soon!');
+  }
+
   const { text, page: p, pages } = renderText(resolved, page);
   lastList[ctx.from] = {
     view,
@@ -468,8 +492,16 @@ cmd({
     const curNames = cur.pathNames.length ? cur.pathNames : [index.root.name];
     const isChildFolder = (f) => f.path.length === curNames.length + 1 &&
       curNames.every((n, i) => f.path[i] === n);
-    const hit = index.folders.find((f) => (f.path.length === 2 || isChildFolder(f)) &&
-      f.path[f.path.length - 1].toLowerCase() === query.toLowerCase());
+    // Non-Latin scripts (Sinhala/Tamil/…) can't match folder names — send
+    // those straight to AI/search instead of letting the tokenizer reduce
+    // the query to just its digits.
+    const isNonLatin = /[^a-zA-Z0-9\s]/.test(query);
+    let hit = null;
+    if (!isNonLatin) {
+      hit = index.folders.find((f) => (f.path.length === 2 || isChildFolder(f)) &&
+        f.path[f.path.length - 1].toLowerCase() === query.toLowerCase());
+      if (!hit) hit = smart.matchFolder(index, query, curNames);
+    }
     if (hit) {
       const inside = hit.path.length === 2
         ? { pathIds: [hit.id], pathNames: [...hit.path] }
@@ -481,10 +513,22 @@ cmd({
       browse[from] = inside;
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...inside.pathIds], pathNames: [...inside.pathNames] }, 1);
     }
-    if (/^\d+$/.test(query) && last && parseInt(query, 10) <= last.pages) {
+    if (!isNonLatin && /^\d+$/.test(query) && last && parseInt(query, 10) <= last.pages) {
       return showView(sock, mek, m, ctx, last.view, parseInt(query, 10));
     }
-    return showView(sock, mek, m, ctx, { kind: 'search', query }, 1);
+
+    // optional AI expansion (Gemini) — translates/normalises, then the local
+    // engine still does the matching. Silently skipped when not configured.
+    let finalQuery = query;
+    let ai = false;
+    if (query.length <= 80) {
+      const expanded = await smart.aiExpand(query);
+      if (expanded) {
+        finalQuery = expanded;
+        ai = true;
+      }
+    }
+    return showView(sock, mek, m, ctx, { kind: 'search', query: finalQuery, original: query, ai }, 1);
   } catch (e) {
     console.error('papers list error:', e.message || e);
     if (e && e.code === 'NOT_CONFIGURED') {
@@ -551,18 +595,23 @@ cmd({
     }
     if (!entry) {
       const index = (await getIndex()).index;
-      const matches = searchFiles(index, arg);
-      if (matches.length === 0) {
-        return reply(`🔍 Nothing matched *" ${arg}"*. Try \`${config.PREFIX}papers ${arg}\`.`);
+      const res = smart.searchIndex(index, arg);
+      if (res.items.length === 0) {
+        return reply(
+          `🔍 *Nothing matched "${arg}"* 🤔\n\n` +
+          `💡 Try a shorter word — e.g. \`${config.PREFIX}paper chem\`\n` +
+          `💡 Or browse everything: \`${config.PREFIX}papers\``
+        );
       }
-      if (matches.length > 1) {
-        let text = `🔍 *${matches.length}* papers matched — be more specific:\n\n`;
-        matches.slice(0, 15).forEach((it, i) => {
+      if (res.items.length > 1) {
+        let text = `🔍 *${res.items.length}* papers matched — be more specific:\n\n`;
+        res.items.slice(0, 15).forEach((it, i) => {
           text += `${i + 1}. 📄 ${cleanName(it.name)} _(${pathLabel(it.path.slice(1))})_\n`;
         });
+        text += `\n📥 Download one: \`${config.PREFIX}paper <name words>\``;
         return reply(text);
       }
-      entry = matches[0];
+      entry = res.items[0];
     }
     return downloadEntry(sock, mek, ctx, entry);
   } catch (e) {
@@ -603,5 +652,6 @@ cmd({
 
 module.exports = {
   resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
-  fmtSize, cleanName, mimeFor, fileNameFor, searchFiles
+  fmtSize, cleanName, mimeFor, fileNameFor,
+  searchFiles: (index, query) => smart.searchIndex(index, query).items
 };

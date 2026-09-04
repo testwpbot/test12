@@ -19,7 +19,7 @@ const DOC = { id: 'FILEDOCSaaaaaaaaaaaaaaa', name: 'Syllabus Notes', mimeType: '
 const DP = f('FILEDEEPaaaaaaaaaaaaaaa', 'DEEP_Paper.pdf', 1024 * 1024);
 
 const TREE = {
-  ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021')],
+  ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021'), d('FOLDEREMPTYaaaaaaaaaaaaa', 'Empty')],
   FOLDER2021aaaaaaaaaaaaaa: [d('FOLDERPHYaaaaaaaaaaaaaaa', 'Physics'), C1, C2, DOC, H1],
   FOLDERPHYaaaaaaaaaaaaaaa: [P1],
   FOLDER2020aaaaaaaaaaaaaa: [M1],
@@ -59,7 +59,14 @@ const axiosStub = {
     e.response = { status: 404, data: { error: { code: 404, message: 'Not Found' } } };
     throw e;
   },
-  post: async () => { throw new Error('stub: no OAuth in tests'); }
+  post: async (url) => {
+    if (url.includes('generativelanguage.googleapis.com')) {
+      if (global.AI_DOWN) { const e = new Error('ai down'); e.response = { status: 503 }; throw e; }
+      global.AI_CALLS = (global.AI_CALLS || 0) + 1;
+      return { data: { candidates: [{ content: { parts: [{ text: 'chemistry 2021' }] } }] } };
+    }
+    throw new Error('stub: no OAuth in tests');
+  }
 };
 
 const Module = require('module');
@@ -285,6 +292,64 @@ const ok = (cond, name, extra) => {
   /* 15c. bot rename */
   ok(config.BOT_NAME === 'AI Mate Assistant', 'BOT_NAME is AI Mate Assistant', config.BOT_NAME);
   ok(String(config.ALIVE_MSG).includes('AI Mate Assistant'), 'ALIVE_MSG renamed');
+
+  /* 15d. smart search engine + empty states */
+  // empty search → simple text, no card, previous list preserved
+  let cardSent = false;
+  const mFlag = { sendButtonMenu: async () => { cardSent = true; } };
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS@g.us', args: ['2020'] }));  // browse 2020 (1 file)
+  sent = [];
+  await papersCmd.function(sock, mek, mFlag, ctx({ from: 'SS@g.us', args: ['zzzqqq', 'xyz'] }));
+  r = lastReply();
+  ok(r.includes('No papers found') && r.includes('zzzqqq'), 'empty search → simple text', r);
+  ok(!cardSent, 'empty search → no button card');
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'SS@g.us', args: ['1'], senderNumber: '94755500001', sender: '94755500001@s.whatsapp.net' }));
+  await drain();
+  ok(docs().length > 0, 'previous numbered list still usable after empty search');
+
+  // empty folder
+  sent = [];
+  await papersCmd.function(sock, mek, mFlag, ctx({ from: 'SS2@g.us', args: ['empty'] }));
+  r = lastReply();
+  ok(r.includes('No papers in this folder'), 'empty folder → simple text', r);
+  ok(!cardSent, 'empty folder → no button card');
+
+  // synonyms / prefixes / typos / stopwords
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['chem'] }));
+  ok(lastReply().includes('2 found') && lastReply().includes('Chemistry_PP1.pdf'), "synonym: 'chem' → chemistry", lastReply());
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['phy', 'pp1'] }));
+  ok(lastReply().includes('Physics_PP1.pdf'), "prefix: 'phy pp1' → physics paper", lastReply());
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['phisics'] }));
+  ok(lastReply().includes('Physics_PP1.pdf') || lastReply().includes('1 found'), "typo: 'phisics' → physics", lastReply());
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['past', 'papers', 'chemistry'] }));
+  ok(lastReply().includes('2 found'), 'stopwords ignored in search', lastReply());
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS3@g.us', args: ['chemistry', 'zzzqq'] }));
+  r = lastReply();
+  ok(r.includes('loose match') && r.includes('Chemistry_PP1.pdf'), 'loose-match fallback flags + finds', r);
+
+  // smart folder match: 'phy' opens Physics inside 2021
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS4@g.us', args: ['2021'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS4@g.us', args: ['phy'] }));
+  ok(lastReply().includes('School Papers / 2021 / Physics'), "smart folder match: 'phy' opens Physics", lastReply());
+
+  // AI expansion (Gemini mock): Sinhala query → english tokens
+  process.env.GEMINI_API_KEY = 'AIzaFAKEGEMINIKEY1234567890';
+  global.AI_CALLS = 0;
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS5@g.us', args: ['රසායන', '2021'] }));
+  r = lastReply();
+  ok(global.AI_CALLS >= 1, 'AI expansion endpoint called');
+  ok(r.includes('රසායන') && r.includes('✨ AI') && r.includes('Chemistry_PP1.pdf'), 'AI-expanded query finds chemistry', r);
+  // AI down → silent fallback to local search
+  global.AI_DOWN = true;
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'SS6@g.us', args: ['රසායන'] }));
+  ok(!lastReply().includes('✨ AI'), 'AI down → falls back silently');
+  delete process.env.GEMINI_API_KEY;
+  global.AI_DOWN = false;
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
