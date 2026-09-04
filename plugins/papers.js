@@ -31,9 +31,31 @@ const DEFAULT_CACHE_MIN = 10;            // drive index cache
 
 /* ── state ───────────────────────────────────────────────────────────── */
 let cache = { at: 0, building: null, index: null };
-const browse = {};      // chat -> { pathIds:[], pathNames:[] }  (root = empty)
-const lastList = {};    // chat -> { view, title, items, page, pages, at }
+// Per-STUDENT state (key "chat:senderJid") — never shared between students,
+// so one person browsing Agriculture cannot leak their view into someone
+// else's "papers". The Drive index cache above is global on purpose: it is
+// the same library for everyone and keeps API quota usage tiny.
+const browse = {};      // studentKey -> { pathIds:[], pathNames:[], at }
+const lastList = {};    // studentKey -> { view, title, items, page, pages, at }
 const cooldowns = {};   // "chat:sender" -> last download ts
+
+/** Per-student state key. */
+function skey(ctx) {
+  return `${ctx.from}:${ctx.sender || ctx.senderNumber || 'anon'}`;
+}
+/** Drop stale navigation/list state so old views never leak back in. */
+function pruneState() {
+  const cutoff = Date.now() - (30 * 60 * 1000);
+  for (const map of [browse, lastList]) {
+    for (const k of Object.keys(map)) {
+      if (!map[k] || !map[k].at || map[k].at < cutoff) delete map[k];
+    }
+  }
+}
+function setBrowse(key, val) {
+  pruneState();
+  browse[key] = { ...val, at: Date.now() };
+}
 let active = 0;
 const queue = [];
 
@@ -358,7 +380,8 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
   const { text, page: p, pages } = renderText(resolved, page);
   const custom = (opts && opts.customText) ? String(opts.customText) : '';
   const bodyText = custom || text;
-  lastList[ctx.from] = {
+  pruneState();
+  lastList[skey(ctx)] = {
     view,
     title: resolved.title,
     items: resolved.items,
@@ -490,12 +513,13 @@ const papersCommand = cmd({
 
     const arg0 = (args[0] || '').toLowerCase();
 
+    const sk = skey(ctx);
     if (arg0 === 'home') {
-      delete browse[from];
+      delete browse[sk];
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
     }
     if (arg0 === 'back') {
-      const b = browse[from];
+      const b = browse[sk];
       if (!b || b.pathIds.length === 0) {
         return reply(`ℹ️ Already at the top level. Send \`${pfx()}papers home\` to refresh.`);
       }
@@ -504,17 +528,17 @@ const papersCommand = cmd({
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
     }
     if (arg0 === 'prev') {
-      const last = lastList[from];
+      const last = lastList[sk];
       if (!last || last.page <= 1) return reply(`ℹ️ Already on the first page.`);
       return showView(sock, mek, m, ctx, last.view, last.page - 1);
     }
     if (arg0 === 'next') {
-      const last = lastList[from];
+      const last = lastList[sk];
       if (!last) return reply(`ℹ️ Nothing to page — send \`${pfx()}papers\` first.`);
       return showView(sock, mek, m, ctx, last.view, last.page + 1);
     }
     if (arg0 === 'more') {
-      const last = lastList[from];
+      const last = lastList[sk];
       const off = parseInt(args[1] || '0', 10);
       if (!last || !Number.isFinite(off)) return reply(`ℹ️ Nothing to extend — send \`${pfx()}papers\` first.`);
       return showView(sock, mek, m, ctx, last.view, last.page, off);
@@ -528,7 +552,7 @@ const papersCommand = cmd({
 
     const query = args.join(' ').trim();
     if (!query) {
-      const b = browse[from] || { pathIds: [], pathNames: [] };
+      const b = browse[sk] || { pathIds: [], pathNames: [] };
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
     }
 
@@ -536,8 +560,8 @@ const papersCommand = cmd({
     // papers are usually sorted in folders like "2021", which look like page
     // numbers. Only fall back to page-jumping when no folder matches.
     const index = (await getIndex()).index;
-    const last = lastList[from];
-    const cur = browse[from] || { pathNames: [] };
+    const last = lastList[sk];
+    const cur = browse[sk] || { pathNames: [] };
     const curNames = cur.pathNames.length ? cur.pathNames : [index.root.name];
     const isChildFolder = (f) => f.path.length === curNames.length + 1 &&
       curNames.every((n, i) => f.path[i] === n);
@@ -555,11 +579,11 @@ const papersCommand = cmd({
       const inside = hit.path.length === 2
         ? { pathIds: [hit.id], pathNames: [...hit.path] }
         : (() => {
-          const ids = [...(browse[from]?.pathIds || [])];
+          const ids = [...(browse[sk]?.pathIds || [])];
           if (ids[ids.length - 1] !== hit.id) ids.push(hit.id);
           return { pathIds: ids, pathNames: [...hit.path] };
         })();
-      browse[from] = inside;
+      setBrowse(sk, inside);
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...inside.pathIds], pathNames: [...inside.pathNames] }, 1);
     }
     if (!isNonLatin && /^\d+$/.test(query) && last && parseInt(query, 10) <= last.pages) {
@@ -610,7 +634,8 @@ const paperCommand = cmd({
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
     }
 
-    const last = lastList[from];
+    const sk = skey(ctx);
+    const last = lastList[sk];
     if (/^\d+$/.test(arg)) {
       if (!last || Date.now() - last.at > LIST_TTL) {
         return reply(`🕒 That list expired — send \`${pfx()}papers\` first, then pick a number.`);
@@ -621,15 +646,15 @@ const paperCommand = cmd({
         return reply(`❓ No item ${n} — this list has ${last.items.length} item(s). Send \`${pfx()}papers\` to see it.`);
       }
       if (entry._folder || entry.isFolder) {
-        const cur = browse[from] || { pathIds: [], pathNames: [] };
-        browse[from] = {
+        const cur = browse[sk] || { pathIds: [], pathNames: [] };
+        setBrowse(sk, {
           pathIds: [...cur.pathIds, entry.id],
           pathNames: [...(entry.path || [...cur.pathNames, entry.name])]
-        };
+        });
         return showView(sock, mek, m, ctx, {
           kind: 'folder',
-          pathIds: [...browse[from].pathIds],
-          pathNames: [...browse[from].pathNames]
+          pathIds: [...browse[sk].pathIds],
+          pathNames: [...browse[sk].pathNames]
         }, 1);
       }
       return downloadEntry(sock, mek, ctx, entry);

@@ -152,17 +152,18 @@ const ok = (cond, name, extra) => {
   ok(doc && doc.content.document.toString().startsWith('CONTENT_FILECHEM1'), 'buffer came from Drive');
   ok(doc && doc.content.caption.includes('@94777000001'), 'caption mentions requester');
 
-  /* 5. google-doc export */
+  /* 5. google-doc export (fresh chat → fresh cooldown window) */
   sent = [];
-  await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
-  await paperCmd.function(sock, mek, {}, ctx({ args: ['4'], senderNumber: '94777000002', sender: '94777000002@s.whatsapp.net' }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'GD@g.us', args: ['2021'], sender: '94777000001@s.whatsapp.net' }));
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'GD@g.us', args: ['4'], senderNumber: '94777000001', sender: '94777000001@s.whatsapp.net' }));
   await drain();
   const doc2 = docs().find((x) => x.opts && x.opts.quoted);
   ok(doc2 && doc2.content.fileName === 'Syllabus Notes.pdf' && doc2.content.document.toString().startsWith('EXPORTED_PDF_'), 'google-doc exported as PDF');
 
-  /* 6. oversize → browser link, no upload */
+  /* 6. oversize → browser link, no upload (fresh chat) */
   sent = [];
-  await paperCmd.function(sock, mek, {}, ctx({ args: ['5'], senderNumber: '94777000003', sender: '94777000003@s.whatsapp.net' }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'OS@g.us', args: ['2021'], sender: '94777000001@s.whatsapp.net' }));
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'OS@g.us', args: ['5'], senderNumber: '94777000001', sender: '94777000001@s.whatsapp.net' }));
   ok(lastReply().includes('too big') && lastReply().includes('drive.google.com/file/d/FILEHUGE'), 'oversize gets browser link');
   ok(docs().length === 0, 'oversize NOT uploaded');
 
@@ -176,15 +177,15 @@ const ok = (cond, name, extra) => {
 
   /* 8. deep navigation + back/home */
   await papersCmd.function(sock, mek, {}, ctx({ args: ['2021'] }));
-  await paperCmd.function(sock, mek, {}, ctx({ args: ['1'], senderNumber: '94777000004', sender: '94777000004@s.whatsapp.net' })); // Physics
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['1'], senderNumber: '94777000001', sender: '94777000001@s.whatsapp.net' })); // Physics
   ok(lastReply().includes('AI Mate Papers / 2021 / Physics'), 'subfolder breadcrumb', lastReply());
-  await papersCmd.function(sock, mek, {}, ctx({ args: ['back'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['back'], senderNumber: '94777000001', sender: '94777000001@s.whatsapp.net' }));
   ok(/AI Mate Papers \/ 2021\*\s+\(page 1\//.test(lastReply()), 'back goes up one level');
   await papersCmd.function(sock, mek, {}, ctx({ args: ['home'] }));
   ok(/\(page 1\/1\)/.test(lastReply()) && lastReply().includes('AI Mate Papers'), 'home returns to root');
 
   /* 9. invalid item */
-  await paperCmd.function(sock, mek, {}, ctx({ args: ['99'], senderNumber: '94777000006', sender: '94777000006@s.whatsapp.net' }));
+  await paperCmd.function(sock, mek, {}, ctx({ args: ['99'], senderNumber: '94777000001', sender: '94777000001@s.whatsapp.net' }));
   ok(lastReply().includes('No item 99'), 'invalid item handled');
 
   /* 10. download by name */
@@ -210,7 +211,7 @@ const ok = (cond, name, extra) => {
 
   /* 13. cooldown (60s from env; every other download used a unique key) */
   sent = [];
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['2020'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['2020'], sender: '94711111111@s.whatsapp.net' }));
   await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94711111111', sender: '94711111111@s.whatsapp.net' })); // open 2020
   sent = [];
   await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94711111111', sender: '94711111111@s.whatsapp.net' })); // download Maths
@@ -220,9 +221,10 @@ const ok = (cond, name, extra) => {
   await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94711111111', sender: '94711111111@s.whatsapp.net' }));
   ok(!docs().length && /wait \d+s/.test(lastReply()), 'cooldown: second blocked', lastReply());
   sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['2020'], sender: '94722222222@s.whatsapp.net' })); // own list first
   await paperCmd.function(sock, mek, {}, ctx({ from: 'CD@g.us', args: ['1'], senderNumber: '94722222222', sender: '94722222222@s.whatsapp.net' }));
   await drain();
-  ok(docs().length > 0, 'cooldown: other student unaffected');
+  ok(docs().length > 0, 'cooldown: other student unaffected (own list, no cooldown)');
 
   /* 14. outage: degraded browse from disk cache (fresh state via disk file) */
   const diskCache = path.join(__dirname, '..', 'temp', 'papers-index.json');
@@ -315,7 +317,7 @@ const ok = (cond, name, extra) => {
   ok(r.includes('No papers found') && r.includes('zzzqqq'), 'empty search → simple text', r);
   ok(!cardSent, 'empty search → no button card');
   sent = [];
-  await paperCmd.function(sock, mek, {}, ctx({ from: 'SS@g.us', args: ['1'], senderNumber: '94755500001', sender: '94755500001@s.whatsapp.net' }));
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'SS@g.us', args: ['1'], senderNumber: '94777000001', sender: '94777000001@s.whatsapp.net' }));
   await drain();
   ok(docs().length > 0, 'previous numbered list still usable after empty search');
 
@@ -465,9 +467,9 @@ const ok = (cond, name, extra) => {
      "trigger reacts 📚 to the student's message", JSON.stringify(sent.filter((s) => s.content && s.content.react)));
   // 'paper 2' flow: seed a list, then download without prefix
   sent = [];
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'NP4@g.us', args: ['2020'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'NP4@g.us', args: ['2020'], sender: '94777000001@s.whatsapp.net' }));
   sent = [];
-  await np.function(sock, mek, mCard, { from: 'NP4@g.us', body: 'paper 1', reply: async (t) => { sent.push({ reply: t }); } });
+  await np.function(sock, mek, mCard, { from: 'NP4@g.us', body: 'paper 1', sender: '94777000001@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   await drain();
   ok(docs().length > 0, "'paper 1' downloads without prefix", sent.map((s) => s.reply).join('|').slice(0, 120));
   ok(sent.some((s) => s.content && s.content.react && s.content.react.text === '📚'), "'paper 1' also reacted");
@@ -564,6 +566,29 @@ const ok = (cond, name, extra) => {
   const textSendIdx = greetBlock.indexOf('await test.sendMessage(groupJid, { text');
   const cardIdx = greetBlock.indexOf('sendHubCard');
   ok(textSendIdx > cardIdx, 'card attempted BEFORE any plain text send');
+
+  /* 15m. cross-student isolation (the 'agriculture leak' bug) */
+  const A = { senderNumber: '94711111111', sender: '94711111111@s.whatsapp.net' };
+  const B = { senderNumber: '94722222222', sender: '94722222222@s.whatsapp.net' };
+  // A browses deep: root → 2021 → Physics (A's position = Physics folder)
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['2021'], ...A }));
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['1'], ...A }));
+  ok(lastReply().includes('AI Mate Papers / 2021 / Physics'), 'A is inside Physics');
+  // B types ".papers" in the SAME chat → B must see the ROOT, not A's folder
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: [], ...B }));
+  r = lastReply();
+  ok(r.includes('AI Mate Papers*  (page') && r.includes('2020') && r.includes('2021') && !r.includes('/ Physics'),
+     'B gets the ROOT menu, not A\'s folder view', r);
+  // B has their OWN numbered list (root: 2 folders) — A's 1-item list must not leak
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['99'], ...B }));
+  ok(lastReply().includes('this list has 3 item'), "B's list is B's own (root: 3 folders, not A's Physics view)", lastReply());
+  // A's position is intact for A
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['2'], ...A }));  // folders first → P1 is item 2
+  await drain();
+  ok(docs().some((d) => d.content.fileName === 'Physics_PP1.pdf'), "A can still download from A's own view",
+     JSON.stringify({ replies: sent.map((s) => s.reply).filter(Boolean) }));
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
