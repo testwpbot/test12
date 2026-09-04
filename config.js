@@ -25,8 +25,8 @@ const SETTINGS = {
   AUTO_STATUS_REACT: "true",
   BLOCK_CALLS: "true",
   BLOCK_CALLS_MSG: "📵 Sorry, calls are not allowed on this number. Please send a text message instead.",
-  GDRIVE_API_KEY: "",
-  GDRIVE_FOLDER_ID: "",
+  GDRIVE_API_KEY: "AIzaSyDphsADXHXqzYGjd1snF2gy2P9xGcOiBEo",
+  GDRIVE_FOLDER_ID: "11Sf5yQ7gHCu9Qby-hggGYz0YHhLuN6NW",
   PAPERS_MAX_SIZE_MB: "95",
   PAPERS_COOLDOWN_SEC: "30",
   PAPERS_CACHE_MIN: "10"
