@@ -552,8 +552,10 @@ const papersCommand = cmd({
 
     const query = args.join(' ').trim();
     if (!query) {
-      const b = browse[sk] || { pathIds: [], pathNames: [] };
-      return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [...b.pathIds], pathNames: [...b.pathNames] }, 1);
+      // Bare "papers" = the main menu, ALWAYS fresh — never resume an old
+      // sub-folder position. (back/next still work within an active browse.)
+      delete browse[sk];
+      return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
     }
 
     // a folder name (top-level or inside the current folder) always wins —

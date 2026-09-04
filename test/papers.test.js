@@ -609,6 +609,24 @@ const ok = (cond, name, extra) => {
   ok(lastReply().includes('refreshed'), 'rebuild succeeds after transient retries', lastReply());
   global.TRANSIENT_FAILS = 0;
 
+  /* 15o. bare "papers" always = fresh main menu (no stale sub-folder) */
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: ['2021'], ...A }));
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: ['1'], ...A }));
+  ok(lastReply().includes('/ Physics'), 'A is inside Physics again');
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: [], ...A }));   // bare papers
+  r = lastReply();
+  ok(r.includes('AI Mate Papers*  (page') && r.includes('2020') && !r.includes('/ Physics'),
+     'bare papers resets to the main menu, never last state', r);
+  // no-prefix 'papers' behaves the same
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: ['2021'], ...A }));
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: ['1'], ...A }));
+  sent = [];
+  await np.function(sock, mek, mCard, { from: 'FR@g.us', body: 'papers', sender: A.sender, reply: async (t) => { sent.push({ reply: t }); } });
+  ok(lastCard && lastCard.title.includes('AI Mate Papers') && !lastCard.text.includes('/ Physics'),
+     "no-prefix 'papers' also resets to the main menu", lastCard && lastCard.title);
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
