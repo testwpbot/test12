@@ -10,7 +10,7 @@
     "test": "node test/papers.test.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "api-dylux": "^1.8.5",
     "axios": "^1.9.0",
     "browser-id3-writer": "^6.2.0",
@@ -39,6 +39,6 @@
     "sadaslk-dlcore": "^1.0.0",
     "abir-photo360-apis": "^1.0.2",
     "puppeteer": "^24.35.0",
-    "gifted-btns": "^1.0.0"
+    "gifted-btns": "1.0.2"
   }
 }
