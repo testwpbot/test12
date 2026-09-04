@@ -122,6 +122,46 @@ async function connectToWA() {
 
   test.ev.on('creds.update', saveCreds);
 
+  // ── 👋 Welcome newly added group members (owner-configurable) ──
+  // Profile names are learned from messages the bot sees; when a student has
+  // no known name (or none set), the welcome greets them by their number.
+  const knownNames = new Map();            // digits -> pushname
+  const rememberName = (jid, name) => {
+    const digits = String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+    if (digits && name && String(name).trim()) {
+      if (knownNames.size > 5000) knownNames.clear();
+      knownNames.set(digits, String(name).trim());
+    }
+  };
+
+  test.ev.on('group-participants.update', async (update) => {
+    try {
+      if (!update || update.action !== 'add' || !Array.isArray(update.participants)) return;
+      if (!config.isEnabled('WELCOME_NEW_MEMBERS')) return;
+
+      let groupName = '';
+      try {
+        const meta = await test.groupMetadata(update.id);
+        groupName = (meta && meta.subject) || '';
+      } catch (e) { /* group name is optional */ }
+
+      const botDigits = String(test.user.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      for (const jid of update.participants) {
+        const digits = String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+        if (!digits || digits === botDigits) continue;          // never greet the bot itself
+        const name = knownNames.get(digits) || digits;          // profile name, else number
+        const text = String(config.WELCOME_MSG || '')
+          .replaceAll('{name}', name)
+          .replaceAll('{group}', groupName || 'the group')
+          .replaceAll('{bot}', config.BOT_NAME);
+        await test.sendMessage(update.id, { text, mentions: [jid] });
+        console.log(`👋 Welcomed new member ${name} to ${update.id}`);
+      }
+    } catch (e) {
+      console.error('❌ welcome handler error:', e.message || e);
+    }
+  });
+
   // ── 📵 Block calls from non-owner users to the bot's (BOT_OWNER) number ──
   // Incoming call offers are auto-rejected while BLOCK_CALLS is on. The caller
   // gets an optional auto-reply (BLOCK_CALLS_MSG, max once per 10 min) and the
@@ -169,6 +209,9 @@ async function connectToWA() {
 
     const mek = messages[0];
     if (!mek || !mek.message) return;
+    if (mek.pushName && mek.key && !mek.key.fromMe) {
+      rememberName(mek.key.participant || mek.key.remoteJid, mek.pushName);
+    }
     mek.message = getContentType(mek.message) === 'ephemeralMessage' ? mek.message.ephemeralMessage.message : mek.message;
    
 

@@ -446,7 +446,7 @@ async function downloadEntry(sock, mek, ctx, entry) {
 }
 
 /* ── .papers — browse / search ───────────────────────────────────────── */
-cmd({
+const papersCommand = cmd({
   pattern: 'papers',
   alias: ['pastpapers', 'paperlist'],
   react: '📚',
@@ -644,6 +644,86 @@ cmd({
       return reply(isBoss ? `📚 Not configured — send \`${config.PREFIX}papersetup\`.` : '📚 Past papers are not set up yet.');
     }
     return reply(`❌ ${gdrive.friendlyError(e)}`);
+  }
+});
+
+/* ── no-prefix triggers — students just type "papers" / "chemistry past papers" ── */
+let settingsPlugin = null;
+try { settingsPlugin = require('./settings'); } catch (e) { /* optional */ }
+
+// Words that mark a message as a papers request.
+const TRIGGER_WORDS = new Set(['papers', 'paper', 'pastpapers', 'pastpaper', 'past', 'pp']);
+// Subjects/vocab a bare message must contain to count as a trigger (KB-driven).
+const isKnownWord = (t) => !!smart.SYNONYMS[t] ||
+  Object.values(smart.SYNONYMS).some((vars) => vars.includes(t));
+
+cmd({
+  // no pattern + filter → registered as a reply handler (runs on every text)
+  noPrefixTriggers: true,
+  filter: (text, extra) => {
+    try {
+      if (!config.isEnabled('PAPERS_NO_PREFIX')) return false;
+
+      // students only — never react to the bot's own messages (loop guard)
+      const mek = extra && extra.message;
+      if (!mek || mek.key?.fromMe) return false;
+      const jid = String(mek.key?.remoteJid || '');
+      if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) return false;
+
+      const body = String(text || '').trim();
+      if (!body || body.length > 60 || /\n|https?:\/\//i.test(body)) return false;
+      if (body.startsWith(config.PREFIX)) return false;      // normal pipeline handles these
+      if (settingsPlugin && settingsPlugin.isPending &&
+          settingsPlugin.isPending(extra.sender)) return false;  // don't steal setting values
+
+      const norm = body.toLowerCase()
+        .replace(/[^a-z0-9\s/]+/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+      const tokens = norm.split(' ').filter(Boolean);
+
+      // plain "papers" / "past papers" → main menu
+      const squashed = norm.replace(/\s+/g, '');
+      if (['papers', 'pastpapers', 'pastpaper', 'alpastpapers', 'alpapers'].includes(squashed)) return true;
+
+      // "<something> past papers / papers / pp" → <something> must be real
+      // subject words ("chemistry past papers" ✓, "this paper is hard" ✗)
+      if (tokens.some((t) => TRIGGER_WORDS.has(t))) {
+        const rest = tokens
+          .filter((t) => !TRIGGER_WORDS.has(t) && !smart.STOPWORDS.has(t))
+          .map((t) => t.replace(/\//g, ''));
+        if (rest.length === 0) return true;                      // bare "papers"
+        if (rest.length <= 4 && rest.every(isKnownWord)) return true;
+        return false;
+      }
+
+      // bare subject phrase ("chemistry", "phy", "business studies") → search
+      if (tokens.length >= 1 && tokens.length <= 3 &&
+          tokens.every((t) => t.length >= 2 && isKnownWord(t))) return true;
+
+      return false;
+    } catch (e) {
+      console.error('papers no-prefix filter error:', e.message || e);
+      return false;
+    }
+  }
+}, async (sock, mek, m, ctx) => {
+  try {
+    if (!rootId()) {
+      return ctx.reply('📚 Past papers are not set up yet — the admin is on it! 🛠️');
+    }
+    const body = String(ctx.body || '').toLowerCase()
+      .replace(/[^a-z0-9\s/]+/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    const tokens = body.split(' ').filter(Boolean);
+
+    // Map the phrase to the exact same behaviour as typing `.papers …` —
+    // folder matching, search, AI expansion and pagination all apply.
+    let rest = tokens.filter((t) => !TRIGGER_WORDS.has(t) && !smart.STOPWORDS.has(t));
+    rest = rest.map((t) => (t === 'a/l' ? 'al' : t)).slice(0, 4);
+    return papersCommand.function(sock, mek, m, { ...ctx, args: rest });
+  } catch (e) {
+    console.error('papers no-prefix handler error:', e.message || e);
+    return ctx.reply(`❌ ${gdrive.friendlyError(e)}`);
   }
 });
 

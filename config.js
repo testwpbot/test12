@@ -31,7 +31,10 @@ const SETTINGS = {
   PAPERS_COOLDOWN_SEC: "30",
   PAPERS_CACHE_MIN: "10",
   GEMINI_API_KEY: "",
-  PAPERS_ROOT_NAME: "AI Mate Papers"
+  PAPERS_ROOT_NAME: "AI Mate Papers",
+  PAPERS_NO_PREFIX: "true",
+  WELCOME_NEW_MEMBERS: "true",
+  WELCOME_MSG: "*👋 Welcome to {group}, {name}!* 🎓\n\nYou joined the *{bot}* study group 🤖\n📚 Type *papers* to browse & download past papers — no prefix needed!\n🔍 Or try: *chemistry past papers*"
 };
 
 /**
@@ -154,6 +157,22 @@ const SETTINGS_META = {
     desc: 'Shown in the .papers menu instead of the Drive folder name',
     type: 'text',
     validate: (v) => (v.length <= 40 ? true : 'Keep it under 40 characters.')
+  },
+  PAPERS_NO_PREFIX: {
+    label: 'Papers no-prefix mode',
+    desc: 'Students can just type "papers" or "chemistry past papers"',
+    type: 'boolean'
+  },
+  WELCOME_NEW_MEMBERS: {
+    label: 'Welcome new members',
+    desc: 'Greet students when they are added to a group',
+    type: 'boolean'
+  },
+  WELCOME_MSG: {
+    label: 'Welcome message',
+    desc: 'Placeholders: {name} {group} {bot}',
+    type: 'text',
+    validate: (v) => (v.length <= 400 ? true : 'Keep the welcome message under 400 characters.')
   }
 };
 

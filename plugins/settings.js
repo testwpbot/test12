@@ -252,3 +252,7 @@ cmd(
     return applyChange(m, p.key, text);
   }
 );
+
+// Expose pending-prompt state so other plugins (papers no-prefix triggers)
+// can step aside while the owner is typing a setting value.
+module.exports = { isPending: (sender) => !!pending[sender] };

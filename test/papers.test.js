@@ -414,6 +414,51 @@ const ok = (cond, name, extra) => {
   await papersCmd.function(sock, mek, {}, ctx({ from: 'RN4@g.us', args: ['2020'] }));
   ok(lastReply().includes('AI Mate Papers / 2020'), 'nav works with custom name', lastReply());
 
+  /* 15h. no-prefix triggers (students only) */
+  const { replyHandlers } = require('../command');
+  const np = replyHandlers.find((h) => h.noPrefixTriggers === true);
+  ok(!!np, 'no-prefix reply handler registered');
+  const f = (t, extra = {}) => np.filter(t, { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } }, ...extra });
+  ok(f('papers') === true, "trigger: 'papers'");
+  ok(f('Papers!') === true, "trigger: 'Papers!'");
+  ok(f('past papers') === true, "trigger: 'past papers'");
+  ok(f('A/L past papers') === true, "trigger: 'A/L past papers'");
+  ok(f('chemistry past papers') === true, "trigger: 'chemistry past papers'");
+  ok(f('chemistry') === true, "trigger: bare subject 'chemistry'");
+  ok(f('phy') === true, "trigger: bare subject 'phy'");
+  ok(f('hello how are you') === false, "ignores normal chat");
+  ok(f('this paper is hard') === false, "ignores sentences mentioning paper (4+ extra words)", 'checked');
+  ok(f('.papers') === false, "ignores prefixed commands");
+  ok(f('papers', { message: { key: { fromMe: true, remoteJid: 'G@g.us' } } }) === false, 'ignores bot own messages');
+  ok(f('papers', { message: { key: { fromMe: false, remoteJid: 'status@broadcast' } } }) === false, 'ignores status broadcast');
+  ok(f('https://evil.com papers') === false, 'ignores messages with links');
+  ok(f('chemistry, past papers!') === true, 'punctuation tolerated');
+
+  // full flow: 'papers' opens the main menu card
+  lastCard = null;
+  await np.function(sock, mek, mCard, { from: 'NP@g.us', body: 'papers', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(lastCard && lastCard.title.includes('AI Mate Papers'), "typing 'papers' opens main menu card", lastCard && lastCard.title);
+  // 'chemistry past papers' opens a search card
+  lastCard = null;
+  await np.function(sock, mek, mCard, { from: 'NP2@g.us', body: 'chemistry past papers', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(lastCard && lastCard.title.includes('chemistry') && lastCard.listTitle.includes('Pick a result'),
+     "'chemistry past papers' shows search results card", lastCard && lastCard.title);
+
+  // toggle off via owner setting (config.set writes config.js; we restore it)
+  config.set('PAPERS_NO_PREFIX', 'false');
+  ok(f('papers') === false, 'setting off: no-prefix triggers disabled');
+  config.set('PAPERS_NO_PREFIX', 'true');
+  ok(f('papers') === true, 'setting on: triggers back');
+
+  /* 15i. welcome message template */
+  const tpl = config.WELCOME_MSG
+    .replaceAll('{name}', 'Kasun')
+    .replaceAll('{group}', 'A/L 2026 Class')
+    .replaceAll('{bot}', config.BOT_NAME);
+  ok(tpl.includes('Welcome to A/L 2026 Class, Kasun') && tpl.includes('AI Mate Assistant'),
+     'welcome template fills name/group/bot', tpl);
+  ok(!config.WELCOME_MSG.includes('[name]'), 'welcome default has no placeholder bugs');
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

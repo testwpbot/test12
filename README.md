@@ -38,6 +38,10 @@ overridden with an environment variable of the same name.
 | `PAPERS_COOLDOWN_SEC` | `30` | Wait required between downloads per student |
 | `PAPERS_CACHE_MIN` | `10` | How long the saved Drive index stays fresh |
 | `GEMINI_API_KEY` | — | Optional: AI-powered query expansion for `.papers` search |
+| `PAPERS_ROOT_NAME` | `AI Mate Papers` | Menu name shown instead of the Drive folder name |
+| `PAPERS_NO_PREFIX` | `true` | Students can type `papers` / `chemistry past papers` without the prefix |
+| `WELCOME_NEW_MEMBERS` | `true` | Greet students when they are added to a group |
+| `WELCOME_MSG` | 👋 Welcome to {group}… | Welcome text — placeholders `{name}` `{group}` `{bot}` |
 
 `SESSION_ID` and `PORT` are read-only inside the bot (shown masked in the
 settings panel) — set them in `config.js` or as env vars.
@@ -128,6 +132,21 @@ prefers it automatically when present):
          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
      ```
 5. Restart the bot (or re-run the workflow).
+
+### 👋 Welcome messages & no-prefix mode
+
+- **New member greetings** — when a student is added to a group, the bot
+  welcomes them by their WhatsApp profile name (or their number if the name
+  isn't set/known). Toggle with `.settings toggle WELCOME_NEW_MEMBERS`, edit
+  the text with `.settings set WELCOME_MSG …` (`{name}`, `{group}`, `{bot}`).
+- **No-prefix papers** — students can simply type:
+  - `papers` or `past papers` → main menu
+  - `chemistry past papers`, `a/l past papers` → search / open the folder
+  - `chemistry`, `phy`, `fwc` → instant search
+
+  Only **student** messages trigger this (never the bot's own), normal chat
+  is ignored, and the whole feature can be switched off with
+  `.settings toggle PAPERS_NO_PREFIX` if you ever want prefix-only mode.
 
 ### 🔎 Smart search (how students find papers)
 
