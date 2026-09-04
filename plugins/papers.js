@@ -396,7 +396,7 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
       // logo only on the MAIN menu (root folder, first page) — not on every card
       const isMainMenu = !resolved.isSearch && view.kind === 'folder' &&
         (!view.pathNames || view.pathNames.length === 0) && p === 1 && !offset;
-      return await m.sendButtonMenu({
+      await m.sendButtonMenu({
         // title only on the MAIN menu card — sub-level cards would duplicate
         // it (their body's first line already carries the breadcrumb)
         title: isMainMenu ? cardTitle(resolved) : '',
@@ -410,11 +410,19 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
         listTitle: listTitleFor(resolved),
         sections
       });
+      console.log(`📋 papers card relayed (${sections.length} section${sections.length === 1 ? '' : 's'}) to ${ctx.from}`);
+      return;
     } catch (e) {
-      console.error('papers: button card failed, falling back to text:', e.message);
+      console.error('papers: button card failed, falling back to text:', e.message || e);
     }
   }
-  return ctx.reply(bodyText);
+  // guaranteed final fallback: plain text, sent directly through the socket
+  try {
+    return await ctx.reply(bodyText);
+  } catch (e) {
+    console.error('papers: ctx.reply failed, sending raw:', e.message || e);
+    return sock.sendMessage(ctx.from, { text: bodyText });
+  }
 }
 
 /**
@@ -793,7 +801,12 @@ cmd({
     return papersCommand.function(sock, mek, m, pass({ args: rest }));
   } catch (e) {
     console.error('papers no-prefix handler error:', e.message || e);
-    return ctx.reply(`❌ ${gdrive.friendlyError(e)}`);
+    try {
+      return await ctx.reply(`❌ ${gdrive.friendlyError(e)}`);
+    } catch (e2) {
+      console.error('papers: even the error reply failed:', e2.message || e2);
+      return sock.sendMessage(ctx.from, { text: `❌ ${gdrive.friendlyError(e)}` });
+    }
   }
 });
 
