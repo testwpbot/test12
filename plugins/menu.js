@@ -17,7 +17,7 @@ const categoryEmojis = {
   CONVERT: "🔄"
 };
 
-const headerImage = "https://github.com/DANUWA-MD/DANUWA-MD/blob/main/images/DANUWA-MD.png?raw=true";
+const headerImage = config.ALIVE_IMG;   // bot logo (live from settings)
 
 function getCategoryEmoji(cat) {
   return categoryEmojis[cat.toUpperCase()] || "📌";
@@ -59,15 +59,18 @@ cmd({
       const cmdsInCategory = commandMap[matchedCategory];
       const catEmoji = getCategoryEmoji(matchedCategory);
 
-      let subMenuText = `╭━━━〔 *${catEmoji} ${matchedCategory} MENU* 〕━━━┈\n┃\n`;
+      // Slogan-as-title: the category banner IS the card title, so the body
+      // stays clean (no duplicated banner box, no logo — lighter messages).
+      const subMenuTitle = `${catEmoji} ${matchedCategory} MENU`;
+
+      let subMenuText = ``;
 
       cmdsInCategory.forEach(c => {
         const patterns = [c.pattern, ...(c.alias || [])].filter(Boolean).map(p => `.${p}`);
-        subMenuText += `┃ 🔹 *${patterns.join(", ")}*\n`;
-        if (c.desc) subMenuText += `┃    └ ${c.desc}\n`;
+        subMenuText += `🔹 *${patterns.join(", ")}*\n`;
+        if (c.desc) subMenuText += `    └ ${c.desc}\n\n`;
       });
 
-      subMenuText += `┃\n╰━━━━━━━━━━━━━━━━━━━┈\n`;
       subMenuText += `📌 *Total Commands:* ${cmdsInCategory.length}\n\n`;
       subMenuText += `💡 *Tip:* Click a button below to navigate submenus.`;
 
@@ -90,17 +93,15 @@ cmd({
       // Try sending with interactive buttons
       try {
         await m.sendButtons({
-          title: `${config.BOT_NAME} | ${matchedCategory}`,
+          title: subMenuTitle,
           text: subMenuText,
           footer: `${config.BOT_NAME} WhatsApp Bot`,
-          image: headerImage,
           buttons: subMenuButtons
         });
       } catch (err) {
         console.error("Submenu buttons error, falling back to text reply:", err);
         await test.sendMessage(from, {
-          image: { url: headerImage },
-          caption: subMenuText
+          caption: `╭━━━〔 *${subMenuTitle}* 〕━━━┈\n\n${subMenuText}`
         }, { quoted: m });
       }
 
@@ -182,13 +183,14 @@ cmd({
     const cmdsInCategory = commandMap[selectedCategory];
     const catEmoji = getCategoryEmoji(selectedCategory);
 
-    let cmdText = `╭━━━〔 *${catEmoji} ${selectedCategory} MENU* 〕━━━┈\n┃\n`;
+    const subMenuTitle = `${catEmoji} ${selectedCategory} MENU`;   // slogan as title
+
+    let cmdText = ``;
     cmdsInCategory.forEach(c => {
       const patterns = [c.pattern, ...(c.alias || [])].filter(Boolean).map(p => `.${p}`);
-      cmdText += `┃ 🔹 *${patterns.join(", ")}*\n`;
-      if (c.desc) cmdText += `┃    └ ${c.desc}\n`;
+      cmdText += `🔹 *${patterns.join(", ")}*\n`;
+      if (c.desc) cmdText += `    └ ${c.desc}\n\n`;
     });
-    cmdText += `┃\n╰━━━━━━━━━━━━━━━━━━━┈\n`;
     cmdText += `📌 *Total Commands:* ${cmdsInCategory.length}\n`;
 
     const subMenuButtons = [
@@ -206,10 +208,9 @@ cmd({
       });
 
     await m.sendButtons({
-      title: `${config.BOT_NAME} | ${selectedCategory}`,
+      title: subMenuTitle,
       text: cmdText,
       footer: `${config.BOT_NAME} WhatsApp Bot`,
-      image: headerImage,
       buttons: subMenuButtons
     });
 

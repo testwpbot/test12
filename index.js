@@ -168,6 +168,26 @@ async function connectToWA() {
         .replaceAll('{bot}', config.BOT_NAME);
       await test.sendMessage(groupJid, { text, mentions: [`${digits}@s.whatsapp.net`] });
       console.log(`👋 Welcomed new member ${name} to ${groupJid}`);
+
+      // Follow up with the interactive main menu as a button message
+      try {
+        const menuCmd = commands.find((c) => c.pattern === 'menu');
+        if (menuCmd) {
+          const fakeMek = {
+            key: { remoteJid: groupJid, fromMe: false, id: `WELCOME-${Date.now()}`, participant: participantJid },
+            pushName: name
+          };
+          await menuCmd.function(test, fakeMek, sms(test, fakeMek), {
+            from: groupJid,
+            sender: participantJid,
+            q: '',
+            reply: (t) => test.sendMessage(groupJid, { text: t }, { quoted: fakeMek })
+          });
+          console.log(`📋 Sent main menu to ${name}`);
+        }
+      } catch (me) {
+        console.error('⚠️ welcome menu card failed:', me.message || me);
+      }
     } catch (e) {
       console.error('❌ welcome handler error:', e.message || e);
     }
