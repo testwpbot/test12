@@ -25,6 +25,7 @@ const A16ENG = f('FILE16AG3aaaaaaaaaaaaaa', '2016_Agriculture_English_Medium.pdf
 const A16SIN = f('FILE16AG4aaaaaaaaaaaaaa', '2016_Agriculture_Sinhala.pdf', 1024 * 1024);
 const B16MCQ = f('FILE16BI1aaaaaaaaaaaaaa', '2016_Biology_MCQ_Sinhala.pdf', 1024 * 1024);
 const B16ESS = f('FILE16BI2aaaaaaaaaaaaaa', '2016_Biology_Structured_Sinhala.pdf', 1024 * 1024);
+const B16MS = f('FILE16BI3aaaaaaaaaaaaaa', '2016_Biology_Marking_Scheme_Sinhala.pdf', 1024 * 1024);
 
 const CHEM20 = f('FILE20CH1aaaaaaaaaaaaaa', '2020_Chemistry_Sinhala_Medium.pdf', 1024 * 1024);
 
@@ -35,7 +36,7 @@ const TREE = {
   FOLDER2020aaaaaaaaaaaaaa: [M1, CHEM20],
   FOLDER2016aaaaaaaaaaaaaa: [d('FOLDERAG16aaaaaaaaaaaaaaa', 'Agriculture'), d('FOLDERBI16aaaaaaaaaaaaaaa', 'Biology')],
   FOLDERAG16aaaaaaaaaaaaaaa: [A16MCQ, A16ESS, A16ENG, A16SIN],
-  FOLDERBI16aaaaaaaaaaaaaaa: [B16MCQ, B16ESS],
+  FOLDERBI16aaaaaaaaaaaaaaa: [B16MCQ, B16ESS, B16MS],
   FOLDERPHYaaaaaaaaaaaaaaa_: [DP] // unreachable decoy (id not referenced)
 };
 // deep chain: 2021/Physics already above; extend Physics with a subfolder
@@ -516,8 +517,8 @@ const ok = (cond, name, extra) => {
   sent = [];
   ffCard = null;
   await ppickCmd.function(sock, mek, ffM, ctx({ from: 'FFY@g.us', args: ['year', '2016'], sender: '94778111113@s.whatsapp.net' }));
-  ok(ffCard && ffCard.sections[0].rows.length === 2,
-     'answering the year → the paper(s) as tap rows', JSON.stringify(ffCard && ffCard.sections));
+  ok(ffCard && ffCard.sections[0].rows.length === 3,
+     'answering the year → the papers (incl. marking scheme) as tap rows', JSON.stringify(ffCard && ffCard.sections));
 
   // ── FF-text: student TYPES the answer instead of tapping
   global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":null}';
@@ -592,6 +593,41 @@ const ok = (cond, name, extra) => {
     ] }, 'biology 2020');
   ok(siRes2.items.length === 1 && siRes2.items[0].name.includes('2020_Biology'),
      "YEAR PIN: 'biology 2020' returns exactly the 2020 biology", JSON.stringify(siRes2.items.map((x) => x.name)));
+
+  /* 15x. explicit types NEVER fall back to another kind */
+  const PS15x = require('../lib/papersearch');
+  const TYPE_WORDS_MS = new Set(PS15x.TYPE_WORDS.marking);
+  // marking requested where no marking exists → NOT the question paper
+  global.AI_INTERPRET = '{"action":"find","year":2020,"subject":"chemistry","medium":"sinhala","type":"marking"}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FT1@g.us', body: 'i want chemistry marking scheme', sender: '94778222221@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  const ft1 = sent.map((s) => s.reply).join('\n');
+  ok(!ffCard && ft1.includes('Marking scheme not found') && ft1.includes('question paper'),
+     'marking requested, none exists → clean not-found + what exists (never the paper)', ft1.slice(0, 140));
+  // marking exists → ONLY the marking file
+  global.AI_INTERPRET = '{"action":"find","year":2016,"subject":"biology","medium":"sinhala","type":"marking"}';
+  sent = [];
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'FT2@g.us', body: '2016 biology sinhala marking scheme', sender: '94778222222@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('Marking_Scheme'),
+     'marking exists → only the marking scheme', JSON.stringify(ffCard && ffCard.sections));
+  // synonyms: answer sheet / answer key / uthara pathra / provencial
+  ok(PS15x.parsePaperQuery('2019 chemistry sinhala answer sheet')?.type === 'marking', "synonym: 'answer sheet' → marking");
+  ok(PS15x.parsePaperQuery('2019 chemistry sinhala answer key')?.type === 'marking', "synonym: 'answer key' → marking");
+  ok(PS15x.parsePaperQuery('2019 bio sinhala uthara pathra')?.type === 'marking', "synonym: 'uthara pathra' → marking");
+  ok(PS15x.classifyFileName('2019_Biology_Uthara_Pathra_Sinhala.pdf').extra.some((w) => TYPE_WORDS_MS.has(w)),
+     'classifier: Uthara_Pathra file recognized as marking');
+  ok(PS15x.classifyFileName('2020 Phy Marking Scheme English.pdf').extra.some((w) => TYPE_WORDS_MS.has(w)),
+     'classifier: Marking Scheme file recognized');
+  ok(PS15x.parsePaperQuery('2019 provencial bio sinhala')?.cat === 'provincial', "typo: 'provencial' → provincial");
+  // path-based marking folder
+  const mkIdx = { root: { name: 'X' }, folders: [], files: [
+    { name: 'Biology.pdf', isFolder: false, path: ['X', 'Marking Schemes', '2019'] }
+  ] };
+  const mkCls = [...PS15x.classifyAll(mkIdx).values()][0];
+  ok(mkCls.typeKind === 'marking', 'path: file in "Marking Schemes/" folder counts as marking', JSON.stringify(mkCls));
 
   /* 15w. collections — past / FWC / provincial — any language */
   const PS = require('../lib/papersearch');
@@ -791,9 +827,10 @@ const ok = (cond, name, extra) => {
   lastCard = null;
   await np.function(sock, mek, mCard, { from: 'SR5@g.us', body: '2016 bio sinhala', sender: '94778000004@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   const rowTitles = (lastCard && lastCard.sections[0].rows.map((r) => r.title).join('|')) || '';
-  ok(lastCard && lastCard.sections[0].rows.length === 2 &&
-     rowTitles.includes('2016_Biology_MCQ_Sinhala.pdf') && rowTitles.includes('2016_Biology_Structured_Sinhala.pdf'),
-     'variants-only combo → both siblings as tap rows', rowTitles);
+  ok(lastCard && lastCard.sections[0].rows.length === 3 &&
+     rowTitles.includes('2016_Biology_MCQ_Sinhala.pdf') && rowTitles.includes('2016_Biology_Structured_Sinhala.pdf') &&
+     rowTitles.includes('2016_Biology_Marking_Scheme_Sinhala.pdf'),
+     'variants-only combo → all siblings (incl. marking) as tap rows', rowTitles);
   ok(lastCard && lastCard.text.includes('Tap a paper below to download'),
      'card invites tapping, not typing numbers', lastCard && lastCard.text.slice(0, 120));
 

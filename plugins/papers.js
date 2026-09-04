@@ -528,24 +528,28 @@ function mediumsFor(index, year, subject, cat) {
   }
   return [...meds].sort();
 }
+function isMarkingFile(cls, f) {
+  const c = cls.get(f) || {};
+  return c.typeKind === 'marking' || (c.extra || []).some((w) => TYPE_WORDS.marking.includes(w));
+}
+/**
+ * STRICT type filter: when the student explicitly asked for a marking
+ * scheme / mcq / essay / question paper, we NEVER silently serve another
+ * kind — empty means "not found" and the bot tells what exists instead.
+ */
 function filterByType(index, files, type) {
   if (!type) return files;
   const cls = classifyAll(index);
-  if (type === 'paper') {
-    const exact = files.filter((f) => {
-      const c = cls.get(f) || {};
-      const isMarking = c.typeKind === 'marking' || (c.extra || []).some((w) => TYPE_WORDS.marking.includes(w));
+  return files.filter((f) => {
+    if (type === 'marking') return isMarkingFile(cls, f);
+    const c = cls.get(f) || {};
+    if (type === 'paper') {
+      const isMarking = isMarkingFile(cls, f);
       const isMcq = (c.extra || []).includes('mcq');
       return !isMarking && !isMcq;
-    });
-    return exact.length ? exact : files;
-  }
-  const hit = files.filter((f) => {
-    const c = cls.get(f) || {};
-    if (type === 'marking') return c.typeKind === 'marking' || (c.extra || []).some((w) => TYPE_WORDS.marking.includes(w));
+    }
     return (c.extra || []).some((w) => TYPE_WORDS[type].includes(w));
   });
-  return hit.length ? hit : files;
 }
 
 /** The "not found" reply with available-subjects hint (shared). */
@@ -799,6 +803,28 @@ async function directPaperRequest(sock, mek, m, ctx, q) {
       matches.length === 1 ? '📥 Download…' : '📥 Pick a paper…');
   }
 
+  // the requested KIND is missing — tell the student what exists instead
+  if (q.type) {
+    const all = matchPaper(index, q);
+    const cls = classifyAll(index);
+    const hasMarking = all.some((f) => isMarkingFile(cls, f));
+    const hasMcq = all.some((f) => (cls.get(f) || {}).extra?.includes('mcq'));
+    const hasPaper = all.some((f) => !isMarkingFile(cls, f) && !(cls.get(f) || {}).extra?.includes('mcq'));
+    const avail = [
+      hasPaper && 'question paper',
+      hasMcq && 'MCQ',
+      hasMarking && 'marking scheme'
+    ].filter(Boolean);
+    const kindName = { marking: 'Marking scheme', mcq: 'MCQ paper', essay: 'Essay paper', paper: 'Question paper' }[q.type] || 'That kind';
+    return ctx.reply(
+      `❌ *${kindName} not found:* ${label}\n` +
+      (avail.length
+        ? `📚 For *${label}* we have: ${avail.join(', ')}\n`
+        : `That combination isn't in the library yet.\n`) +
+      `💡 Or send *papers* to browse 📂` +
+      (degraded ? '\n⚠️ _Saved copy shown — Drive unreachable right now._' : '')
+    );
+  }
   return paperNotFound(ctx, index, q, degraded);
 }
 
