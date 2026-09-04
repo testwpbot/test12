@@ -448,7 +448,7 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
           });
           break;
         } catch (e) {
-          console.log("Reply handler error:", e);
+          console.log("Reply handler error:", (e && (e.message || e.code)) || e);
         }
       }
     }

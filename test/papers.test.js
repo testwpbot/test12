@@ -33,6 +33,7 @@ TREE.SUBDEEPaaaaaaaaaaaaaaa0 = [DP];
 const META = { ROOT_FOLDER_ID_123456: 'School Papers' };
 
 let OUTAGE = false;
+global.TRANSIENT_FAILS = 0;   // make the next N metadata calls fail once with ECONNRESET
 const axiosStub = {
   get: async (url, opts = {}) => {
     if (OUTAGE) {
@@ -53,6 +54,12 @@ const axiosStub = {
     if (mM && opts.params && opts.params.alt === 'media') return { data: Buffer.from('CONTENT_' + mM[1]) };
     const mM2 = url.match(/\/drive\/v3\/files\/([^/?]+)$/);
     if (mM2 && !(opts.params && opts.params.alt)) {
+      if (global.TRANSIENT_FAILS > 0) {
+        global.TRANSIENT_FAILS--;
+        const err = new Error('read ECONNRESET');
+        err.code = 'ECONNRESET';
+        throw err;
+      }
       return { data: { id: mM2[1], name: META[mM2[1]] || mM2[1], mimeType: FOLDER_MIME } };
     }
     // anything else: behave like the real API — reject with a 404
@@ -589,6 +596,18 @@ const ok = (cond, name, extra) => {
   await drain();
   ok(docs().some((d) => d.content.fileName === 'Physics_PP1.pdf'), "A can still download from A's own view",
      JSON.stringify({ replies: sent.map((s) => s.reply).filter(Boolean) }));
+
+  /* 15n. transient network errors: retried + friendly */
+  const gdriveF = require('../lib/gdrive');
+  const fe = gdriveF.friendlyError(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }));
+  ok(fe.includes('unreachable') && fe.includes('try again'), 'network error → friendly message', fe);
+
+  global.TRANSIENT_FAILS = 2;   // fail twice, succeed on 3rd attempt
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'RT@g.us', args: ['refresh'], isOwner: true }));
+  ok(global.TRANSIENT_FAILS === 0, 'retry loop consumed both transient failures');
+  ok(lastReply().includes('refreshed'), 'rebuild succeeds after transient retries', lastReply());
+  global.TRANSIENT_FAILS = 0;
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
