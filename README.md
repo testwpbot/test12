@@ -102,15 +102,28 @@ files once the API is back.
 
 ### Keeping the folder private (optional)
 
-Don't want "anyone with link"? Use a **service account** instead of an API key:
+An API key can only read folders shared "anyone with the link" — keys carry
+no identity, so Google will always 404 a Restricted folder. To keep the
+folder **fully Restricted**, use a **service account** instead (the bot
+prefers it automatically when present):
 
-1. Google Cloud Console → **IAM & Admin → Service Accounts → Create service account**
-2. Open it → **Keys → Add key → JSON** → save the file as
-   `gdrive-service-account.json` in the bot folder (already git-ignored).
+1. Google Cloud Console → **Credentials → Create credentials → Service account**
+2. Open it → **Keys → Add key → JSON** → download the file.
 3. In Drive, share the papers folder with the service account's e-mail
-   (`…@…iam.gserviceaccount.com`) as **Viewer**.
-4. Restart the bot. The plugin detects the key file automatically — no API
-   key or public sharing needed.
+   (`…@…iam.gserviceaccount.com`, the `client_email` inside the JSON) as
+   **Viewer** — the folder stays Restricted.
+4. Give the bot the key:
+   - **VPS / own machine:** save it as `gdrive-service-account.json` next to
+     `config.js` (git-ignored). **Never commit it.**
+   - **GitHub Actions:** repo → Settings → Secrets and variables → Actions →
+     New repository secret `GOOGLE_SERVICE_ACCOUNT_JSON` = the whole JSON
+     content, then pass it to the start step in the workflow:
+     ```yaml
+     - run: npm run start
+       env:
+         GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+     ```
+5. Restart the bot (or re-run the workflow).
 
 ### Safety limits built in
 
