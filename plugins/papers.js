@@ -138,10 +138,6 @@ function fmtSize(bytes) {
 function cleanName(name) {
   return String(name || 'file').replace(/[/\\]/g, '_').slice(0, 120);
 }
-function shortName(name, limit = 24) {
-  const n = cleanName(name);
-  return n.length <= limit ? n : `${n.slice(0, limit - 1)}…`;
-}
 function isGoogleDoc(entry) {
   return !!(entry.mimeType && entry.mimeType.startsWith('application/vnd.google-apps'));
 }
@@ -263,23 +259,29 @@ function buildRows(resolved, page, offset, view) {
   const windowStart = pageStart + Math.max(0, offset || 0);
   const slice = resolved.items.slice(windowStart, windowStart + BUTTON_ROWS);
 
+  // WhatsApp visually clamps very long row titles, so the FULL file name is
+  // also carried in the description whenever the title may be clamped.
+  const clampDesc = (s) => (s.length <= 72 ? s : `${s.slice(0, 71)}…`);
   const itemRows = slice.map((it, i) => {
     const n = windowStart + i + 1;
+    const name = cleanName(it.name);
     if (it._folder) {
       const c = it._childCount ? ` · ${it._childCount} items` : '';
       return {
         id: `${config.PREFIX}paper ${n}`,
-        title: `📁 ${shortName(it.name)}`,
-        description: `Folder — open${c}`
+        title: `📁 ${name}`,
+        description: clampDesc(`Folder${c} — tap to open`)
       };
     }
     const size = it.size ? ` · ${fmtSize(it.size)}` : '';
-    const where = resolved.isSearch && it.path.length > 1 ? ` · ${it.path[it.path.length - 1]}` : '';
     const kind = isGoogleDoc(it) ? 'Docs → PDF' : 'File';
+    const desc = name.length > 24
+      ? `${name}${size} — download`
+      : `${kind}${size} — download`;
     return {
       id: `${config.PREFIX}paper ${n}`,
-      title: `${n}. ${shortName(it.name)}`,
-      description: `${kind}${size} — download${where}`
+      title: `${n}. ${name}`,
+      description: clampDesc(desc)
     };
   });
 
@@ -298,6 +300,16 @@ function buildRows(resolved, page, offset, view) {
   if (p < pages) navRows.push({ id: `${config.PREFIX}papers next`, title: '📄 Next page', description: `Page ${p + 1} of ${pages}` });
   if (resolved.isSearch) navRows.push({ id: `${config.PREFIX}papers`, title: '🗂️ Browse folders', description: 'Open the folder browser' });
   return { itemRows, navRows, page: p, pages };
+}
+
+/** Contextual label for the list button, matching what the rows offer. */
+function listTitleFor(resolved) {
+  if (resolved.isSearch) return '🔍 Pick a result…';
+  const hasFolders = resolved.items.some((it) => it._folder);
+  const hasFiles = resolved.items.some((it) => !it._folder);
+  if (hasFolders && !hasFiles) return '📂 Open a folder…';
+  if (!hasFolders && hasFiles) return '📥 Download…';
+  return '📚 Browse papers…';
 }
 
 function cardTitle(resolved) {
@@ -360,7 +372,7 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
           (resolved.degraded ? '\n\n⚠️ _Saved copy — Drive unreachable right now._' : ''),
         footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
         image: config.ALIVE_IMG,
-        listTitle: '📂 Open…',
+        listTitle: listTitleFor(resolved),
         sections
       });
     } catch (e) {

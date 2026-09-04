@@ -17,10 +17,11 @@ const P1 = f('FILEPHY1aaaaaaaaaaaaaaa', 'Physics_PP1.pdf', 1.5 * 1024 * 1024);
 const M1 = f('FILEMATH1aaaaaaaaaaaaaa', 'Maths.pdf', 900 * 1024);
 const DOC = { id: 'FILEDOCSaaaaaaaaaaaaaaa', name: 'Syllabus Notes', mimeType: 'application/vnd.google-apps.document' };
 const DP = f('FILEDEEPaaaaaaaaaaaaaaa', 'DEEP_Paper.pdf', 1024 * 1024);
+const LONG = f('FILELONGaaaaaaaaaaaaaaa', 'Business_Studies_Structured_Essay_Paper_2021_GCE_AL_New_Syllabus.pdf', 4 * 1024 * 1024);
 
 const TREE = {
   ROOT_FOLDER_ID_123456: [d('FOLDER2020aaaaaaaaaaaaaa', '2020'), d('FOLDER2021aaaaaaaaaaaaaa', '2021'), d('FOLDEREMPTYaaaaaaaaaaaaa', 'Empty')],
-  FOLDER2021aaaaaaaaaaaaaa: [d('FOLDERPHYaaaaaaaaaaaaaaa', 'Physics'), C1, C2, DOC, H1],
+  FOLDER2021aaaaaaaaaaaaaa: [d('FOLDERPHYaaaaaaaaaaaaaaa', 'Physics'), C1, C2, DOC, H1, LONG],
   FOLDERPHYaaaaaaaaaaaaaaa: [P1],
   FOLDER2020aaaaaaaaaaaaaa: [M1],
   FOLDERPHYaaaaaaaaaaaaaaa_: [DP] // unreachable decoy (id not referenced)
@@ -350,6 +351,38 @@ const ok = (cond, name, extra) => {
   ok(!lastReply().includes('✨ AI'), 'AI down → falls back silently');
   delete process.env.GEMINI_API_KEY;
   global.AI_DOWN = false;
+
+  /* 15e. full file names + contextual picker button */
+  sent = [];
+  await papersCmd.function(sock, mek, mFlag, ctx({ from: 'FN@g.us' }));   // root → folders only
+  ok(cardSent, 'root card sent');
+  // NOTE: cardSent flag is stale from earlier — rebind a fresh catcher
+  let lastCard = null;
+  const mCard = { sendButtonMenu: async (payload) => { lastCard = payload; } };
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN1@g.us' }));
+  ok(lastCard && lastCard.listTitle.includes('Open a folder'), 'root: picker says "Open a folder"', lastCard && lastCard.listTitle);
+
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN2@g.us', args: ['2021'] })); // mixed
+  ok(lastCard && lastCard.listTitle.includes('Browse papers'), 'mixed folder: picker says "Browse papers"', lastCard && lastCard.listTitle);
+  const longRow = lastCard.sections[0].rows.find((rw) => rw.id === '.paper 6');
+  ok(longRow && longRow.title.includes('Business_Studies_Structured_Essay_Paper_2021_GCE_AL_New_Syllabus.pdf'),
+     'full file name in row title, no truncation', JSON.stringify(longRow));
+  ok(longRow && !longRow.title.includes('…'), 'no ellipsis in titles');
+  ok(longRow && longRow.description.includes('Business_Studies_Structured_Essay_Paper_2021_GCE_AL_New_Syllabus.pdf'),
+     'full name also in description (survives WhatsApp title clamp)', JSON.stringify(longRow));
+
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN3@g.us', args: ['2020'] })); // files only
+  ok(lastCard && lastCard.listTitle.includes('Download'), 'file-only folder: picker says "Download"', lastCard && lastCard.listTitle);
+  const shortRow = lastCard.sections[0].rows[0];
+  ok(shortRow && shortRow.title === '1. Maths.pdf' && shortRow.description.includes('download'),
+     'short-name row keeps info description', JSON.stringify(shortRow));
+
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN4@g.us', args: ['chem'] }));
+  ok(lastCard && lastCard.listTitle.includes('Pick a result'), 'search: picker says "Pick a result"', lastCard && lastCard.listTitle);
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
