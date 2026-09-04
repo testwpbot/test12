@@ -34,7 +34,7 @@ const SETTINGS = {
   PAPERS_ROOT_NAME: "AI Mate Papers",
   PAPERS_NO_PREFIX: "true",
   WELCOME_NEW_MEMBERS: "true",
-  WELCOME_MSG: "*👋 Welcome to {group}, {name}!* 🎓\n\nYou joined the *{bot}* study group 🤖\n📚 Type *papers* to browse & download past papers — no prefix needed!\n🔍 Or try: *chemistry past papers*"
+  WELCOME_MSG: "*👋 Welcome, {name}!* 🎓\n📚 Type *papers* to get past papers."
 };
 
 /**

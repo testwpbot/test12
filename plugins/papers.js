@@ -184,10 +184,15 @@ function countDirectChildren(index, folderPath) {
 }
 
 /* ── view resolution ─────────────────────────────────────────────────── */
+/** Command prefix for student-facing tips: hidden when no-prefix mode is on. */
+function pfx() {
+  return config.isEnabled('PAPERS_NO_PREFIX') ? '' : config.PREFIX;
+}
+
 function helpLines() {
   return (
-    `📥 Download: \`${config.PREFIX}paper <number>\`\n` +
-    `🔍 Search: \`${config.PREFIX}papers <words>\`  |  📄 More: \`${config.PREFIX}papers next\``
+    `📥 Download: \`${pfx()}paper <number>\`\n` +
+    `🔍 Search: \`${pfx()}papers <words>\`  |  📄 More: \`${pfx()}papers next\``
   );
 }
 
@@ -336,15 +341,15 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
       const q = view.original || view.query;
       return ctx.reply(
         `🔍 *No papers found for "${q}"* 🤔\n\n` +
-        `💡 Try fewer or shorter words — e.g. \`${config.PREFIX}papers chem 2021\`\n` +
+        `💡 Try fewer or shorter words — e.g. \`${pfx()}papers chem 2021\`\n` +
         `💡 Abbreviations & typos are OK — \`phy\`, \`bio\`, \`maths\`\n` +
-        `💡 Or browse everything: \`${config.PREFIX}papers\``
+        `💡 Or browse everything: \`${pfx()}papers\``
       );
     }
     if (view.pathNames && view.pathNames.length > 1) {
       return ctx.reply(
         `📁 *No papers in this folder yet.*\n\n` +
-        `⬆️ Back: \`${config.PREFIX}papers back\`  |  🏠 Home: \`${config.PREFIX}papers\``
+        `⬆️ Back: \`${pfx()}papers back\`  |  🏠 Home: \`${pfx()}papers\``
       );
     }
     return ctx.reply('📚 The papers library is empty right now — check back soon!');
@@ -380,8 +385,8 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0) {
         ...(isMainMenu ? { image: config.ALIVE_IMG } : {}),
         text:
           `${resolved.title}${counts}  (page ${p}/${pages})\n\n` +
-          `💡 Tap a row below, or type \`${config.PREFIX}paper <number>\`\n` +
-          `🔍 Search everything: \`${config.PREFIX}papers <words>\`` +
+          `💡 Tap a row below, or type \`${pfx()}paper <number>\`\n` +
+          `🔍 Search everything: \`${pfx()}papers <words>\`` +
           (resolved.degraded ? '\n\n⚠️ _Saved copy — Drive unreachable right now._' : ''),
         footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
         listTitle: listTitleFor(resolved),
@@ -472,7 +477,7 @@ const papersCommand = cmd({
     if (arg0 === 'back') {
       const b = browse[from];
       if (!b || b.pathIds.length === 0) {
-        return reply(`ℹ️ Already at the top level. Send \`${config.PREFIX}papers home\` to refresh.`);
+        return reply(`ℹ️ Already at the top level. Send \`${pfx()}papers home\` to refresh.`);
       }
       b.pathIds.pop();
       b.pathNames.pop();
@@ -485,13 +490,13 @@ const papersCommand = cmd({
     }
     if (arg0 === 'next') {
       const last = lastList[from];
-      if (!last) return reply(`ℹ️ Nothing to page — send \`${config.PREFIX}papers\` first.`);
+      if (!last) return reply(`ℹ️ Nothing to page — send \`${pfx()}papers\` first.`);
       return showView(sock, mek, m, ctx, last.view, last.page + 1);
     }
     if (arg0 === 'more') {
       const last = lastList[from];
       const off = parseInt(args[1] || '0', 10);
-      if (!last || !Number.isFinite(off)) return reply(`ℹ️ Nothing to extend — send \`${config.PREFIX}papers\` first.`);
+      if (!last || !Number.isFinite(off)) return reply(`ℹ️ Nothing to extend — send \`${pfx()}papers\` first.`);
       return showView(sock, mek, m, ctx, last.view, last.page, off);
     }
     if (arg0 === 'refresh') {
@@ -563,7 +568,7 @@ const papersCommand = cmd({
 });
 
 /* ── .paper — open folder / download by number or name ───────────────── */
-cmd({
+const paperCommand = cmd({
   pattern: 'paper',
   alias: ['getpaper', 'pastpaper'],
   react: '📥',
@@ -588,12 +593,12 @@ cmd({
     const last = lastList[from];
     if (/^\d+$/.test(arg)) {
       if (!last || Date.now() - last.at > LIST_TTL) {
-        return reply(`🕒 That list expired — send \`${config.PREFIX}papers\` first, then pick a number.`);
+        return reply(`🕒 That list expired — send \`${pfx()}papers\` first, then pick a number.`);
       }
       const n = parseInt(arg, 10);
       const entry = last.items[n - 1];
       if (!entry) {
-        return reply(`❓ No item ${n} — this list has ${last.items.length} item(s). Send \`${config.PREFIX}papers\` to see it.`);
+        return reply(`❓ No item ${n} — this list has ${last.items.length} item(s). Send \`${pfx()}papers\` to see it.`);
       }
       if (entry._folder || entry.isFolder) {
         const cur = browse[from] || { pathIds: [], pathNames: [] };
@@ -623,8 +628,8 @@ cmd({
       if (res.items.length === 0) {
         return reply(
           `🔍 *Nothing matched "${arg}"* 🤔\n\n` +
-          `💡 Try a shorter word — e.g. \`${config.PREFIX}paper chem\`\n` +
-          `💡 Or browse everything: \`${config.PREFIX}papers\``
+          `💡 Try a shorter word — e.g. \`${pfx()}paper chem\`\n` +
+          `💡 Or browse everything: \`${pfx()}papers\``
         );
       }
       if (res.items.length > 1) {
@@ -632,7 +637,7 @@ cmd({
         res.items.slice(0, 15).forEach((it, i) => {
           text += `${i + 1}. 📄 ${cleanName(it.name)} _(${pathLabel(it.path.slice(1))})_\n`;
         });
-        text += `\n📥 Download one: \`${config.PREFIX}paper <name words>\``;
+        text += `\n📥 Download one: \`${pfx()}paper <name words>\``;
         return reply(text);
       }
       entry = res.items[0];
@@ -681,11 +686,22 @@ cmd({
         .replace(/\s+/g, ' ').trim();
       const tokens = norm.split(' ').filter(Boolean);
 
-      // plain "papers" / "past papers" → main menu
+      // compound one-word forms: "pastpapers", "alpapers", …
       const squashed = norm.replace(/\s+/g, '');
       if (['papers', 'pastpapers', 'pastpaper', 'alpastpapers', 'alpapers'].includes(squashed)) return true;
 
-      // "<something> past papers / papers / pp" → <something> must be real
+      // "papers …" — next/prev/home/back/numbers/queries
+      if (tokens[0] === 'papers') {
+        const rest = tokens.slice(1);
+        return rest.length <= 3 && rest.every((t) => t.length >= 1 && t.length <= 24);
+      }
+      // "paper 2" (download item) or "paper chemistry" (search by name)
+      if (tokens[0] === 'paper') {
+        const rest = tokens.slice(1);
+        if (rest.length === 1 && /^\d{1,3}$/.test(rest[0])) return true;
+        return rest.length >= 1 && rest.length <= 3 && rest.every(isKnownWord);
+      }
+      // "<subject> past papers / papers / pp" → <subject> must be real
       // subject words ("chemistry past papers" ✓, "this paper is hard" ✗)
       if (tokens.some((t) => TRIGGER_WORDS.has(t))) {
         const rest = tokens
@@ -711,16 +727,32 @@ cmd({
     if (!rootId()) {
       return ctx.reply('📚 Past papers are not set up yet — the admin is on it! 🛠️');
     }
+    // acknowledge the student's message
+    try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
+
     const body = String(ctx.body || '').toLowerCase()
       .replace(/[^a-z0-9\s/]+/g, ' ')
       .replace(/\s+/g, ' ').trim();
     const tokens = body.split(' ').filter(Boolean);
+    const pass = (o) => Object.assign({}, ctx, o);
 
-    // Map the phrase to the exact same behaviour as typing `.papers …` —
-    // folder matching, search, AI expansion and pagination all apply.
+    // compound one-word forms → main menu
+    const squashed = body.replace(/\s+/g, '');
+    if (['papers', 'pastpapers', 'pastpaper', 'alpastpapers', 'alpapers'].includes(squashed)) {
+      return papersCommand.function(sock, mek, m, pass({ args: [] }));
+    }
+    // "papers next" / "papers 2021" / "papers chemistry" → .papers behaviour
+    if (tokens[0] === 'papers') {
+      return papersCommand.function(sock, mek, m, pass({ args: tokens.slice(1) }));
+    }
+    // "paper 2" / "paper chemistry" → .paper behaviour
+    if (tokens[0] === 'paper') {
+      return paperCommand.function(sock, mek, m, pass({ args: tokens.slice(1) }));
+    }
+    // "<subject> past papers" → search for <subject>
     let rest = tokens.filter((t) => !TRIGGER_WORDS.has(t) && !smart.STOPWORDS.has(t));
     rest = rest.map((t) => (t === 'a/l' ? 'al' : t)).slice(0, 4);
-    return papersCommand.function(sock, mek, m, { ...ctx, args: rest });
+    return papersCommand.function(sock, mek, m, pass({ args: rest }));
   } catch (e) {
     console.error('papers no-prefix handler error:', e.message || e);
     return ctx.reply(`❌ ${gdrive.friendlyError(e)}`);

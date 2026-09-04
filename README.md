@@ -41,7 +41,7 @@ overridden with an environment variable of the same name.
 | `PAPERS_ROOT_NAME` | `AI Mate Papers` | Menu name shown instead of the Drive folder name |
 | `PAPERS_NO_PREFIX` | `true` | Students can type `papers` / `chemistry past papers` without the prefix |
 | `WELCOME_NEW_MEMBERS` | `true` | Greet students when they are added to a group |
-| `WELCOME_MSG` | 👋 Welcome to {group}… | Welcome text — placeholders `{name}` `{group}` `{bot}` |
+| `WELCOME_MSG` | 👋 Welcome, {name}!… | Short welcome text — placeholders `{name}` `{group}` `{bot}` |
 
 `SESSION_ID` and `PORT` are read-only inside the bot (shown masked in the
 settings panel) — set them in `config.js` or as env vars.
@@ -143,6 +143,11 @@ prefers it automatically when present):
   - `papers` or `past papers` → main menu
   - `chemistry past papers`, `a/l past papers` → search / open the folder
   - `chemistry`, `phy`, `fwc` → instant search
+  - `paper 3` → download item 3 · `papers next` → next page
+
+  When a trigger fires, the bot reacts 📚 to the student's message, and all
+  the on-screen tips adapt: in no-prefix mode they say `papers` / `paper 3`
+  (no dot); with prefix mode on they show `.papers` / `.paper 3`.
 
   Only **student** messages trigger this (never the bot's own), normal chat
   is ignored, and the whole feature can be switched off with

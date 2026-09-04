@@ -433,6 +433,12 @@ const ok = (cond, name, extra) => {
   ok(f('papers', { message: { key: { fromMe: false, remoteJid: 'status@broadcast' } } }) === false, 'ignores status broadcast');
   ok(f('https://evil.com papers') === false, 'ignores messages with links');
   ok(f('chemistry, past papers!') === true, 'punctuation tolerated');
+  ok(f('paper 2') === true, "trigger: 'paper 2' (download item)");
+  ok(f('paper hello') === false, "'paper hello' ignored (unknown word)");
+  ok(f('papers next') === true, "trigger: 'papers next'");
+  ok(f('papers 2021') === true, "trigger: 'papers 2021'");
+  ok(f('papers foo bar baz qux') === false, "'papers' + 4 junk words ignored");
+  ok(f('paper is hard') === false, "'paper is hard' ignored");
 
   // full flow: 'papers' opens the main menu card
   lastCard = null;
@@ -444,6 +450,30 @@ const ok = (cond, name, extra) => {
   ok(lastCard && lastCard.title.includes('chemistry') && lastCard.listTitle.includes('Pick a result'),
      "'chemistry past papers' shows search results card", lastCard && lastCard.title);
 
+  // reaction + delegation: 'papers' reacts to the student's message
+  sent = [];
+  await np.function(sock, mek, mCard, { from: 'NP3@g.us', body: 'papers', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.some((s) => s.content && s.content.react && s.content.react.text === '📚'),
+     "trigger reacts 📚 to the student's message", JSON.stringify(sent.filter((s) => s.content && s.content.react)));
+  // 'paper 2' flow: seed a list, then download without prefix
+  sent = [];
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'NP4@g.us', args: ['2020'] }));
+  sent = [];
+  await np.function(sock, mek, mCard, { from: 'NP4@g.us', body: 'paper 1', reply: async (t) => { sent.push({ reply: t }); } });
+  await drain();
+  ok(docs().length > 0, "'paper 1' downloads without prefix", sent.map((s) => s.reply).join('|').slice(0, 120));
+  ok(sent.some((s) => s.content && s.content.react && s.content.react.text === '📚'), "'paper 1' also reacted");
+
+  // tips adapt to prefix mode
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'TP@g.us' }));
+  ok(lastCard && !lastCard.text.includes('.paper'), 'tips have NO prefix when no-prefix mode is on', lastCard && lastCard.text.slice(0, 200));
+  config.set('PAPERS_NO_PREFIX', 'false');
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'TP2@g.us' }));
+  ok(lastCard && lastCard.text.includes('.paper'), 'tips show prefix when mode is off', lastCard && lastCard.text.slice(0, 200));
+  config.set('PAPERS_NO_PREFIX', 'true');
+
   // toggle off via owner setting (config.set writes config.js; we restore it)
   config.set('PAPERS_NO_PREFIX', 'false');
   ok(f('papers') === false, 'setting off: no-prefix triggers disabled');
@@ -451,13 +481,14 @@ const ok = (cond, name, extra) => {
   ok(f('papers') === true, 'setting on: triggers back');
 
   /* 15i. welcome message template */
-  const tpl = config.WELCOME_MSG
+  const tpl = 'Hi {name}, welcome to {group} — powered by {bot}!'
     .replaceAll('{name}', 'Kasun')
     .replaceAll('{group}', 'A/L 2026 Class')
     .replaceAll('{bot}', config.BOT_NAME);
-  ok(tpl.includes('Welcome to A/L 2026 Class, Kasun') && tpl.includes('AI Mate Assistant'),
+  ok(tpl.includes('Hi Kasun, welcome to A/L 2026 Class') && tpl.includes('AI Mate Assistant'),
      'welcome template fills name/group/bot', tpl);
-  ok(!config.WELCOME_MSG.includes('[name]'), 'welcome default has no placeholder bugs');
+  ok(config.WELCOME_MSG.length <= 120 && /\{name\}/.test(config.WELCOME_MSG) && /papers/i.test(config.WELCOME_MSG),
+     'default welcome is short & points to papers', config.WELCOME_MSG);
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

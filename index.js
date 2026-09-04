@@ -133,30 +133,50 @@ async function connectToWA() {
       knownNames.set(digits, String(name).trim());
     }
   };
+  const greetedAt = new Map();             // "group:digits" -> ts (dedupe 90s)
+  const wasGreeted = (key) => {
+    const t = greetedAt.get(key);
+    if (t && Date.now() - t < 90 * 1000) return true;
+    greetedAt.set(key, Date.now());
+    return false;
+  };
 
-  test.ev.on('group-participants.update', async (update) => {
+  // Greet one new member. Fired from BOTH the participants event and the
+  // group "added" notification message, whichever arrives first.
+  const greetMember = async (groupJid, participantJid) => {
     try {
-      if (!update || update.action !== 'add' || !Array.isArray(update.participants)) return;
+      if (!groupJid || !String(groupJid).endsWith('@g.us')) return;
       if (!config.isEnabled('WELCOME_NEW_MEMBERS')) return;
+      const digits = String(participantJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      if (!digits) return;
+      const botDigits = String(test.user.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      if (digits === botDigits) return;                      // never greet the bot itself
+      if (wasGreeted(`${groupJid}:${digits}`)) return;       // event + stub double-fire guard
 
       let groupName = '';
       try {
-        const meta = await test.groupMetadata(update.id);
+        const meta = await test.groupMetadata(groupJid);
         groupName = (meta && meta.subject) || '';
       } catch (e) { /* group name is optional */ }
 
-      const botDigits = String(test.user.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-      for (const jid of update.participants) {
-        const digits = String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-        if (!digits || digits === botDigits) continue;          // never greet the bot itself
-        const name = knownNames.get(digits) || digits;          // profile name, else number
-        const text = String(config.WELCOME_MSG || '')
-          .replaceAll('{name}', name)
-          .replaceAll('{group}', groupName || 'the group')
-          .replaceAll('{bot}', config.BOT_NAME);
-        await test.sendMessage(update.id, { text, mentions: [jid] });
-        console.log(`👋 Welcomed new member ${name} to ${update.id}`);
-      }
+      const name = knownNames.get(digits) || digits;         // profile name, else number
+      const text = String(config.WELCOME_MSG || '')
+        .replaceAll('{name}', name)
+        .replaceAll('{group}', groupName || 'the group')
+        .replaceAll('{bot}', config.BOT_NAME);
+      await test.sendMessage(groupJid, { text, mentions: [`${digits}@s.whatsapp.net`] });
+      console.log(`👋 Welcomed new member ${name} to ${groupJid}`);
+    } catch (e) {
+      console.error('❌ welcome handler error:', e.message || e);
+    }
+  };
+
+  test.ev.on('group-participants.update', async (update) => {
+    try {
+      if (!update) return;
+      console.log(`👥 group-participants.update: ${update.action} in ${update.id} (${(update.participants || []).join(', ')})`);
+      if (update.action !== 'add' || !Array.isArray(update.participants)) return;
+      for (const jid of update.participants) await greetMember(update.id, jid);
     } catch (e) {
       console.error('❌ welcome handler error:', e.message || e);
     }
@@ -208,6 +228,14 @@ async function connectToWA() {
     }
 
     const mek = messages[0];
+    // Fallback welcome: WhatsApp's "X was added" group notification
+    // (messageStubType 27) — catches adds even if the participants event
+    // is missed. The 90s dedupe in greetMember prevents double greetings.
+    if (mek && Number(mek.messageStubType) === 27 &&
+        Array.isArray(mek.messageStubParameters) && mek.messageStubParameters[0] &&
+        String(mek.key?.remoteJid || '').endsWith('@g.us')) {
+      await greetMember(mek.key.remoteJid, mek.messageStubParameters[0]);
+    }
     if (!mek || !mek.message) return;
     if (mek.pushName && mek.key && !mek.key.fromMe) {
       rememberName(mek.key.participant || mek.key.remoteJid, mek.pushName);
