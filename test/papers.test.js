@@ -510,31 +510,44 @@ const ok = (cond, name, extra) => {
   ok(cf('2019 Chemistry Sinhala MCQ.pdf').extra.join() === 'mcq', 'classifier: MCQ sibling is a variant');
   ok(cf('20190_notes.pdf').year === null, 'classifier: 20190 is NOT a year (no substring years)');
 
-  // direct hit — full paper name with medium, downloads the document
+  // direct hit — exact paper found → BUTTON card with the FILENAME row
   sent = [];
+  lastCard = null;
   await np.function(sock, mek, mCard, { from: 'SR1@g.us', body: '2016 agriculture english medium', sender: '94778000001@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(lastCard && lastCard.sections.length === 1 && lastCard.sections[0].rows.length === 1,
+     'exact hit → one tap row, no numbers asked', JSON.stringify(lastCard && lastCard.sections));
+  ok(lastCard && lastCard.sections[0].rows[0].title.includes('2016_Agriculture_English_Medium.pdf'),
+     'row carries the paper FILENAME', lastCard && lastCard.sections[0].rows[0].title);
+  ok(lastCard && lastCard.sections[0].rows[0].id === '.paper 1', 'row id downloads on tap');
+  ok(docs().length === 0, 'no instant download — student taps to get it');
+  // tapping the row (paper 1) downloads the paper
+  sent = [];
+  await paperCmd.function(sock, mek, {}, ctx({ from: 'SR1@g.us', args: ['1'], sender: '94778000001@s.whatsapp.net' }));
   await drain();
   ok(docs().some((d) => d.content.fileName && d.content.fileName.includes('2016_Agriculture_English')),
-     'structured query downloads the matching paper', JSON.stringify(docs().map((d) => d.content.fileName)));
+     'tapping the row downloads the paper', JSON.stringify(docs().map((d) => d.content.fileName)));
   ok(sent.some((s) => s.content && s.content.react && (s.content.react.text === '⏳' || s.content.react.text === '✅')),
-     'structured download reacts ⏳/✅');
+     'download reacts ⏳/✅');
 
-  // short terms + typo ("mediam") → EXACT-named file wins over MCQ/essay
-  // siblings — one paper, downloaded straight away
+  // short terms + typo ("mediam") → EXACT-named file wins: single button row
   sent = [];
+  lastCard = null;
   await np.function(sock, mek, mCard, { from: 'SR2@g.us', body: '2016 agri sin mediam', sender: '94778000002@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  await drain();
-  const sr2docs = docs().map((d) => d.content.fileName).join('|');
-  ok(docs().length === 1 && sr2docs.includes('2016_Agriculture_Sinhala.pdf'),
-     'exact name beats MCQ/essay variants — THE paper only', sr2docs);
+  ok(lastCard && lastCard.sections[0].rows.length === 1 &&
+     lastCard.sections[0].rows[0].title.includes('2016_Agriculture_Sinhala.pdf'),
+     'exact name beats MCQ/essay variants — THE paper only (one row)',
+     JSON.stringify(lastCard && lastCard.sections));
 
-  // variants-only combo → numbered list, paper N hint
+  // variants-only combo → button card listing both siblings (tap either)
   sent = [];
+  lastCard = null;
   await np.function(sock, mek, mCard, { from: 'SR5@g.us', body: '2016 bio sinhala', sender: '94778000004@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  const multi = sent.map((s) => s.reply).join('\n');
-  ok(multi.includes('2 papers matched') && multi.includes('2016_Biology_MCQ_Sinhala.pdf') && multi.includes('2016_Biology_Structured_Sinhala.pdf'),
-     'variants-only combo lists the siblings', multi.slice(0, 160));
-  ok(multi.includes('paper 1'), 'multi-match tells the student to reply paper N');
+  const rowTitles = (lastCard && lastCard.sections[0].rows.map((r) => r.title).join('|')) || '';
+  ok(lastCard && lastCard.sections[0].rows.length === 2 &&
+     rowTitles.includes('2016_Biology_MCQ_Sinhala.pdf') && rowTitles.includes('2016_Biology_Structured_Sinhala.pdf'),
+     'variants-only combo → both siblings as tap rows', rowTitles);
+  ok(lastCard && lastCard.text.includes('Tap a paper below to download'),
+     'card invites tapping, not typing numbers', lastCard && lastCard.text.slice(0, 120));
 
   // not found — year exists in library → hint with available subjects
   sent = [];
@@ -544,12 +557,14 @@ const ok = (cond, name, extra) => {
      'not-found message names the requested combo', nf.slice(0, 140));
   ok(nf.includes('Agriculture'), 'not-found hints the subjects available that year');
 
-  // prefixed structured query through .papers
+  // prefixed structured query through .papers → same button card
   sent = [];
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'SR4@g.us', args: ['2016', 'agri', 'eng', 'medium'], sender: '94778000003@s.whatsapp.net' }));
-  await drain();
-  ok(docs().some((d) => d.content.fileName && d.content.fileName.includes('2016_Agriculture_English')),
-     "'.papers 2016 agri eng medium' also resolves directly");
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'SR4@g.us', args: ['2016', 'agri', 'eng', 'medium'], sender: '94778000003@s.whatsapp.net' }));
+  ok(lastCard && lastCard.sections[0].rows.length === 1 &&
+     lastCard.sections[0].rows[0].title.includes('2016_Agriculture_English_Medium.pdf'),
+     "'.papers 2016 agri eng medium' → tap card too",
+     JSON.stringify(lastCard && lastCard.sections));
 
 
   // reaction + delegation: 'papers' reacts to the student's message

@@ -508,7 +508,55 @@ function usageGuide(ctx) {
   );
 }
 
-async function directPaperRequest(sock, mek, ctx, q) {
+/**
+ * Button-based picker: every found paper becomes a TAP row (filename +
+ * size), no number-typing needed. Seeds the per-student list so the row
+ * ids (.paper N) download directly, and keeps a numbered TEXT fallback
+ * for clients where the card truly cannot render.
+ */
+async function sendPickCard(sock, mek, m, ctx, resolved, listTitle) {
+  const sk = skey(ctx);
+  pruneState();
+  lastList[sk] = { view: { kind: 'direct', resolved }, title: resolved.title, items: resolved.items, page: 1, pages: 1, at: Date.now() };
+
+  const rows = resolved.items.slice(0, BUTTON_ROWS).map((it, i) => ({
+    id: `${config.PREFIX}paper ${i + 1}`,
+    title: cleanName(it.name).slice(0, 72),
+    description: `${it.size ? `${fmtSize(it.size)} — ` : ''}tap to download`.slice(0, 72)
+  }));
+  const sections = [{ title: '📥 Papers — tap to download', rows }];
+  const hidden = resolved.items.length - rows.length;
+  const more = hidden > 0 ? `\n📄 …and ${hidden} more — type \`${pfx()}paper ${rows.length + 1}\`` : '';
+  const body =
+    `${resolved.title}\n\n` +
+    `📥 *Tap a paper below to download*${more}` +
+    (resolved.degraded ? '\n\n⚠️ _Saved copy — Drive unreachable right now._' : '');
+
+  if (m && typeof m.sendButtonMenu === 'function') {
+    try {
+      await m.sendButtonMenu({
+        title: '',
+        text: body,
+        footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+        listTitle,
+        sections
+      });
+      console.log(`📋 papers pick card relayed (${resolved.items.length} paper${resolved.items.length === 1 ? '' : 's'}) to ${ctx.from}`);
+      return;
+    } catch (e) {
+      console.error('papers: pick card failed, text fallback:', e.message || e);
+    }
+  }
+  // carding unavailable — numbered text (last resort only)
+  let text = `${resolved.title}\n\n`;
+  resolved.items.slice(0, BUTTON_ROWS).forEach((it, i) => {
+    text += `${i + 1}. 📄 ${cleanName(it.name)}${it.size ? ` _(${fmtSize(it.size)})_` : ''}\n`;
+  });
+  text += `\n📥 Reply ${pfx()}paper 1 – ${Math.min(resolved.items.length, BUTTON_ROWS)} to download`;
+  return ctx.reply(text);
+}
+
+async function directPaperRequest(sock, mek, m, ctx, q) {
   const { index, degraded } = await getIndex();
   const subLabel = SUBJECTS[q.subject] ? SUBJECTS[q.subject].label : q.subjectRaw;
   const medLabel = MEDIUMS[q.medium] ? MEDIUMS[q.medium].label : q.medium;
@@ -516,26 +564,15 @@ async function directPaperRequest(sock, mek, ctx, q) {
 
   const matches = q.subject ? matchPaper(index, q) : [];
 
-  if (matches.length === 1) {
-    return downloadEntry(sock, mek, ctx, matches[0]);
-  }
-
-  if (matches.length > 1) {
-    // several variants (MCQ/essay/etc.) — numbered list, "paper N" works
-    pruneState();
-    const shown = matches.slice(0, 10);
+  if (matches.length >= 1) {
+    // one or many — always a BUTTON card with the paper filename(s);
+    // tapping a row downloads instantly (no number-typing)
     const resolved = {
       title: `📚 *${label}* — ${matches.length} paper${matches.length === 1 ? '' : 's'} found`,
       items: matches, isSearch: true, degraded
     };
-    lastList[skey(ctx)] = { view: { kind: 'direct', resolved }, title: resolved.title, items: matches, page: 1, pages: 1, at: Date.now() };
-    let text = `📚 *${matches.length} papers matched* — ${label}:\n\n`;
-    shown.forEach((it, i) => {
-      text += `${i + 1}. 📄 ${cleanName(it.name)}${it.size ? ` _(${fmtSize(it.size)})_` : ''}\n`;
-    });
-    if (matches.length > shown.length) text += `…and ${matches.length - shown.length} more\n`;
-    text += `\n📥 Reply with *paper 1* – *${Math.min(matches.length, shown.length)}* to download`;
-    return ctx.reply(text);
+    return sendPickCard(sock, mek, m, ctx, resolved,
+      matches.length === 1 ? '📥 Download…' : '📥 Pick a paper…');
   }
 
   // not found — is the year itself in the library? then hint the subjects
@@ -624,7 +661,7 @@ const papersCommand = cmd({
     // structured request first: ".papers 2016 chemistry sinhala medium"
     const structured = parsePaperQuery(query);
     if (structured && structured.subject) {
-      return directPaperRequest(sock, mek, ctx, structured);
+      return directPaperRequest(sock, mek, m, ctx, structured);
     }
 
     // a folder name (top-level or inside the current folder) always wins —
@@ -734,7 +771,7 @@ const paperCommand = cmd({
     // structured request: ".paper 2016 chem sinhala"
     const structured = parsePaperQuery(arg);
     if (structured && structured.subject) {
-      return directPaperRequest(sock, mek, ctx, structured);
+      return directPaperRequest(sock, mek, m, ctx, structured);
     }
 
     // by name — prefer the current list, then search everything
@@ -755,12 +792,12 @@ const paperCommand = cmd({
         );
       }
       if (res.items.length > 1) {
-        let text = `🔍 *${res.items.length}* papers matched — be more specific:\n\n`;
-        res.items.slice(0, 15).forEach((it, i) => {
-          text += `${i + 1}. 📄 ${cleanName(it.name)} _(${pathLabel(it.path.slice(1))})_\n`;
-        });
-        text += `\n📥 Download one: \`${pfx()}paper <name words>\``;
-        return reply(text);
+        // button card — tap the filename to download, no number-typing
+        const resolved = {
+          title: `🔍 *" ${arg}"* — ${res.items.length} matched`,
+          items: res.items.slice(0, 150), isSearch: true, degraded: false
+        };
+        return sendPickCard(sock, mek, m, ctx, resolved, '🔍 Pick a result…');
       }
       entry = res.items[0];
     }
@@ -891,7 +928,7 @@ cmd({
     // STRUCTURED request → "2016 chemistry sinhala medium" → direct download
     const parsed = smart.parsePaperQuery(body);
     if (parsed && parsed.subject && parsed.medium) {
-      return directPaperRequest(sock, mek, ctx, parsed);
+      return directPaperRequest(sock, mek, m, ctx, parsed);
     }
 
     // any other papers-ish text → teach the Year + Subject + Medium format
