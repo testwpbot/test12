@@ -493,8 +493,9 @@ const ok = (cond, name, extra) => {
     .replaceAll('{bot}', config.BOT_NAME);
   ok(tpl.includes('Hi Kasun, welcome to A/L 2026 Class') && tpl.includes('AI Mate Assistant'),
      'welcome template fills name/group/bot', tpl);
-  ok(config.WELCOME_MSG.length <= 120 && /\{name\}/.test(config.WELCOME_MSG) && /papers/i.test(config.WELCOME_MSG),
-     'default welcome is short & points to papers', config.WELCOME_MSG);
+  ok(config.WELCOME_MSG.length <= 120 && /\{name\}/.test(config.WELCOME_MSG) &&
+     /\{group\}/.test(config.WELCOME_MSG) && /papers/i.test(config.WELCOME_MSG),
+     'default welcome is short & has name+group+papers', config.WELCOME_MSG);
 
   /* 15j. participantInfo — Baileys rc.9 welcome bug regression */
   const { participantInfo } = require('../lib/functions');

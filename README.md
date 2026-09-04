@@ -41,7 +41,7 @@ overridden with an environment variable of the same name.
 | `PAPERS_ROOT_NAME` | `AI Mate Papers` | Menu name shown instead of the Drive folder name |
 | `PAPERS_NO_PREFIX` | `true` | Students can type `papers` / `chemistry past papers` without the prefix |
 | `WELCOME_NEW_MEMBERS` | `true` | Greet students when they are added to a group |
-| `WELCOME_MSG` | 👋 Welcome, {name}!… | Short welcome text — placeholders `{name}` `{group}` `{bot}` |
+| `WELCOME_MSG` | 👋 Welcome to {group}, {name}!… | Welcome text — placeholders `{name}` `{group}` `{bot}` |
 
 `SESSION_ID` and `PORT` are read-only inside the bot (shown masked in the
 settings panel) — set them in `config.js` or as env vars.
