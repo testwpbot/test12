@@ -282,7 +282,8 @@ const ok = (cond, name, extra) => {
   // tap flow: open folder 2020 via its row id command
   card = null;
   await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us', args: ['2020'] }));
-  ok(card && card.title.includes('AI Mate Papers / 2020'), 'button card for 2020 folder', card && card.title);
+  ok(card && card.title === '' && card.text.includes('AI Mate Papers / 2020'),
+     'second-level card: no header title, breadcrumb only in body', JSON.stringify({ t: card && card.title, x: card && card.text.slice(0, 80) }));
   const fRows = card && card.sections && card.sections[0].rows;
   ok(fRows && fRows[0] && fRows[0].id === '.paper 1' && /Maths\.pdf/.test(fRows[0].title), 'file row taps .paper 1', JSON.stringify(fRows && fRows[0]));
   const navSec = card && card.sections && card.sections[1];
@@ -411,7 +412,8 @@ const ok = (cond, name, extra) => {
   ok(lastCard && !lastCard.title.includes('School Papers'), 'Drive folder name hidden on root card', lastCard && lastCard.title);
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'RN2@g.us', args: ['2021'] }));
-  ok(lastCard && lastCard.title.includes('AI Mate Papers / 2021'), 'breadcrumb uses custom name too', lastCard && lastCard.title);
+  ok(lastCard && lastCard.title === '' && lastCard.text.includes('AI Mate Papers / 2021'),
+     'breadcrumb uses custom name (in body, no duplicate header)', lastCard && lastCard.text.slice(0, 100));
   sent = [];
   await papersCmd.function(sock, mek, {}, ctx({ from: 'RN3@g.us', args: ['chem'] }));
   ok(lastReply().includes('AI Mate Papers') === false && lastReply().includes('2 found'), 'search title clean', lastReply());
@@ -453,8 +455,8 @@ const ok = (cond, name, extra) => {
   // 'chemistry past papers' opens a search card
   lastCard = null;
   await np.function(sock, mek, mCard, { from: 'NP2@g.us', body: 'chemistry past papers', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(lastCard && lastCard.title.includes('chemistry') && lastCard.listTitle.includes('Pick a result'),
-     "'chemistry past papers' shows search results card", lastCard && lastCard.title);
+  ok(lastCard && lastCard.text.includes('chemistry') && lastCard.listTitle.includes('Pick a result'),
+     "'chemistry past papers' shows search results card", lastCard && lastCard.text.slice(0, 80));
 
   // reaction + delegation: 'papers' reacts to the student's message
   sent = [];

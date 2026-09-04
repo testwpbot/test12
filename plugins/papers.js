@@ -383,7 +383,9 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
       const isMainMenu = !resolved.isSearch && view.kind === 'folder' &&
         (!view.pathNames || view.pathNames.length === 0) && p === 1 && !offset;
       return await m.sendButtonMenu({
-        title: cardTitle(resolved),
+        // title only on the MAIN menu card — sub-level cards would duplicate
+        // it (their body's first line already carries the breadcrumb)
+        title: isMainMenu ? cardTitle(resolved) : '',
         ...(isMainMenu ? { image: config.ALIVE_IMG } : {}),
         text: custom ||
           `${resolved.title}${counts}  (page ${p}/${pages})\n\n` +
