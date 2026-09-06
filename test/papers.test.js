@@ -1197,6 +1197,79 @@ require('../plugins/greetings.js');
   ok(npFF.filter('thanks bro', { sender: '94779222205@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'CF5@g.us' } } }) === false,
      "CF: 'thanks bro' → papers filter declines (handler never runs, zero sends)");
 
+  /* 15ac. multi-request short-term memory — two open commands never cross */
+  guideGate.reset();
+  global.AI_INTERPRET = '';
+  smart.geminiReset();
+  // section 14 re-required papers.js (and greetings registers last), so pick
+  // the LATEST PAPERS handler by filter behaviour — paired with the cached
+  // module handle so handler + __interviews state share one instance
+  const mmSender = '94779444401@s.whatsapp.net';
+  const mmPapers = require('../plugins/papers');
+  const mmAdmits = (h) => { try { return h.filter('i want biology past paper', { sender: mmSender, message: { key: { fromMe: false, remoteJid: 'MM1@g.us' } } }) === true; } catch (e) { return false; } };
+  const mmNP = require('../command').replyHandlers.filter((h) => h.noPrefixTriggers === true && mmAdmits(h)).pop();
+  const mmPpick = commands.filter((c) => c.pattern === 'ppick').pop();
+  ok(!!mmNP, 'MM: papers no-prefix handler found');
+  const mmTap = async (...targs) => { ffCard = null; await mmPpick.function(sock, mek, ffM, ctx({ from: 'MM1@g.us', args: targs, sender: mmSender })); };
+  const mmAsk = async (body) => { ffCard = null; await mmNP.function(sock, mek, ffM, { from: 'MM1@g.us', body, sender: mmSender, reply: async () => {} }); };
+  const mmKey = `MM1@g.us:${mmSender}`;
+  const mmIvs = () => mmPapers.__interviews[mmKey] || [];
+
+  await mmAsk('i want biology past paper');
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'MM: biology request opened', ffCard && ffCard.listTitle);
+  await mmAsk('i want chemistry paper');
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'MM: chemistry request opened alongside', ffCard && ffCard.listTitle);
+  ok(mmIvs().length === 2 && mmIvs()[0].subject === 'biology' && mmIvs()[1].subject === 'chemistry',
+     'MM: BOTH requests kept in short-term memory (no overwrite)', JSON.stringify(mmIvs().map((s) => s.subject)));
+  const bioId = mmIvs()[0].id, chemId = mmIvs()[1].id;
+  ok(!!bioId && !!chemId && bioId !== chemId, 'MM: each request has its own id');
+
+  // typed text (no tap) answers the NEWEST question — here chemistry
+  ffCard = null;
+  await mmNP.function(sock, mek, ffM, { from: 'MM1@g.us', body: '2020', sender: mmSender, reply: async () => {} });
+  ok(mmIvs()[1].year === 2020 && mmIvs()[0].year === null,
+     'MM: typed year answer goes to the NEWEST request (chemistry), biology untouched', JSON.stringify(mmIvs()));
+  ok(ffCard && ffCard.listTitle === '🌐 Pick a medium…', 'MM: chemistry now asks its medium', ffCard && ffCard.listTitle);
+
+  // tap on the BIOLOGY card answers biology — never chemistry
+  await mmTap(bioId, 'year', '2016');
+  ok(mmIvs().length === 2 && mmIvs()[0].year === 2016 && mmIvs()[1].year === 2020,
+     'MM: biology card tap → biology gets ITS year, chemistry intact', JSON.stringify(mmIvs()));
+  ok(ffCard && ffCard.listTitle === '🌐 Pick a medium…', 'MM: biology now asks its medium', ffCard && ffCard.listTitle);
+
+  // completing CHEMISTRY via its own card delivers chemistry, clears only chemistry
+  await mmTap(chemId, 'medium', 'sinhala');
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
+     'MM: chemistry card completion delivers the 2020 CHEMISTRY paper', JSON.stringify(ffCard && ffCard.sections));
+  ok(mmIvs().length === 1 && mmIvs()[0].id === bioId,
+     'MM: chemistry cleared from memory, biology STILL pending', JSON.stringify(mmIvs().map((s) => s.id)));
+
+  // finishing biology delivers BIOLOGY papers and empties the memory
+  await mmTap(bioId, 'medium', 'sinhala');
+  ok(ffCard && ffCard.sections[0].rows.some((r) => r.title.includes('2016_Biology')),
+     'MM: biology completion delivers the 2016 BIOLOGY papers', JSON.stringify(ffCard && ffCard.sections));
+  ok(mmIvs().length === 0, 'MM: memory empty after both requests resolved', JSON.stringify(mmIvs()));
+
+  // cap: at most 3 pending per student — the OLDEST is dropped
+  await mmAsk('i want physics past paper');
+  await mmAsk('i want agriculture past paper');
+  await mmAsk('i want agriculture past paper');
+  ok(mmIvs().length === 3, 'MM: three pendings stored', JSON.stringify(mmIvs().map((s) => s.subject)));
+  await mmAsk('i want agriculture past paper');
+  ok(mmIvs().length === 3 && !mmIvs().some((s) => s.subject === 'physics'),
+     'MM: a 4th request drops the OLDEST (physics), never blocks the new one', JSON.stringify(mmIvs().map((s) => s.subject)));
+
+  // 24-hour cleanup: a request older than 24 h is forgotten
+  const ttlKey = 'MM2@g.us:94779444402@s.whatsapp.net';
+  ffCard = null;
+  await mmNP.function(sock, mek, ffM, { from: 'MM2@g.us', body: 'i want biology past paper', sender: '94779444402@s.whatsapp.net', reply: async () => {} });
+  ok((mmPapers.__interviews[ttlKey] || []).length === 1, 'MM2: request stored in memory');
+  mmPapers.__interviews[ttlKey][0].at = Date.now() - (25 * 60 * 60 * 1000);
+  await mmNP.function(sock, mek, ffM, { from: 'MM2@g.us', body: 'hello', sender: '94779444402@s.whatsapp.net', reply: async () => {} });
+  ok(!mmPapers.__interviews[ttlKey] || mmPapers.__interviews[ttlKey].length === 0,
+     'MM2: memory cleaned after 24 h — stale request forgotten');
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

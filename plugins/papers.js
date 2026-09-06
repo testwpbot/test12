@@ -39,7 +39,30 @@ let cache = { at: 0, building: null, index: null };
 // else's "papers". The Drive index cache above is global on purpose: it is
 // the same library for everyone and keeps API quota usage tiny.
 const browse = {};      // studentKey -> { pathIds:[], pathNames:[], at }
-const interviews = {};  // studentKey -> { subject, year, medium, type, at } — missing-detail questions
+const interviews = {};  // studentKey -> [ { id, at, subject, year, medium, type, cat } ] — SHORT-TERM MEMORY of pending paper requests (several can be open at once)
+const MAX_PENDING = 3;                        // max concurrent pending requests per student (oldest dropped)
+const INTERVIEW_TTL = 24 * 60 * 60 * 1000;    // memory cleaned after 24 hours
+const FIELD_WORDS = new Set(['year', 'subject', 'medium', 'type', 'cat', 'cancel']);
+function ivNewId(list) {
+  let id = '';
+  do { id = Math.random().toString(36).slice(2, 6); }
+  while (FIELD_WORDS.has(id) || list.some((s) => s.id === id));
+  return id;
+}
+/** Drop pending requests older than 24 h. */
+function pruneInterviews() {
+  const cutoff = Date.now() - INTERVIEW_TTL;
+  for (const k of Object.keys(interviews)) {
+    const list = (interviews[k] || []).filter((s) => s && s.at && s.at >= cutoff);
+    if (list.length) interviews[k] = list; else delete interviews[k];
+  }
+}
+function ivList(sk) { return interviews[sk] || []; }
+function ivNewest(sk) { const l = ivList(sk); return l.length ? l[l.length - 1] : null; }
+function ivRemove(sk, id) {
+  const l = ivList(sk).filter((s) => s.id !== id);
+  if (l.length) interviews[sk] = l; else delete interviews[sk];
+}
 const lastList = {};    // studentKey -> { view, title, items, page, pages, at }
 const cooldowns = {};   // "chat:sender" -> last download ts
 
@@ -49,8 +72,9 @@ function skey(ctx) {
 }
 /** Drop stale navigation/list state so old views never leak back in. */
 function pruneState() {
+  pruneInterviews();
   const cutoff = Date.now() - (30 * 60 * 1000);
-  for (const map of [browse, lastList, interviews]) {
+  for (const map of [browse, lastList]) {
     for (const k of Object.keys(map)) {
       if (!map[k] || !map[k].at || map[k].at < cutoff) delete map[k];
     }
@@ -590,20 +614,20 @@ async function askMissing(sock, mek, m, ctx, st, index) {
   if (!st.year) {
     const years = yearsFor(index, st.subject, st.medium, st.cat);
     const shown = years.slice(0, BUTTON_ROWS);
-    rows = shown.map((y) => ({ id: `${config.PREFIX}ppick year ${y}`, title: `📅 ${y}`, description: `${st.subject ? SUBJECTS[st.subject].label : 'Papers'} ${y}` }));
+    rows = shown.map((y) => ({ id: `${config.PREFIX}ppick ${st.id} year ${y}`, title: `📅 ${y}`, description: `${st.subject ? SUBJECTS[st.subject].label : 'Papers'} ${y}` }));
     if (years.length > shown.length) more = `\n📄 …and ${years.length - shown.length} more years — type the year`;
     question = '📅 *What year do you need?*';
     listTitle = '🗓️ Pick a year…';
   } else if (!st.subject) {
     const subs = subjectsForYear(index, st.year);
     const shown = subs.slice(0, BUTTON_ROWS);
-    rows = shown.map((s) => ({ id: `${config.PREFIX}ppick subject ${s}`, title: `📘 ${SUBJECTS[s].label}`, description: `${st.year} papers` }));
+    rows = shown.map((s) => ({ id: `${config.PREFIX}ppick ${st.id} subject ${s}`, title: `📘 ${SUBJECTS[s].label}`, description: `${st.year} papers` }));
     if (subs.length > shown.length) more = `\n📄 …and ${subs.length - shown.length} more — type the subject name`;
     question = '📘 *Which subject do you need?*';
     listTitle = '📘 Pick a subject…';
   } else {
     const meds = mediumsFor(index, st.year, st.subject);
-    rows = meds.map((mk) => ({ id: `${config.PREFIX}ppick medium ${mk}`, title: `🌐 ${MEDIUMS[mk].label}`, description: `${st.year} ${SUBJECTS[st.subject].label} — ${MEDIUMS[mk].label}` }));
+    rows = meds.map((mk) => ({ id: `${config.PREFIX}ppick ${st.id} medium ${mk}`, title: `🌐 ${MEDIUMS[mk].label}`, description: `${st.year} ${SUBJECTS[st.subject].label} — ${MEDIUMS[mk].label}` }));
     question = '🌐 *Which medium do you want?*';
     listTitle = '🌐 Pick a medium…';
   }
@@ -639,6 +663,7 @@ async function startOrContinuePaperRequest(sock, mek, m, ctx, q) {
   // pending interview (newest wins). Interview answers go through .ppick,
   // which applies them to the existing state explicitly.
   const st = {
+    id: q.id || null,   // set = continuation of a KNOWN pending request (card tap)
     subject: q.subject || null,
     year: Number.isFinite(q.year) && q.year ? q.year : null,
     medium: q.medium || null,
@@ -647,7 +672,7 @@ async function startOrContinuePaperRequest(sock, mek, m, ctx, q) {
     at: Date.now()
   };
   if (st.year && st.subject && st.medium) {
-    delete interviews[sk];
+    if (st.id) ivRemove(sk, st.id);   // THIS request is resolved; others stay
     return directPaperRequest(sock, mek, m, ctx, st);
   }
   const { index, degraded } = await getIndex();
@@ -655,21 +680,32 @@ async function startOrContinuePaperRequest(sock, mek, m, ctx, q) {
     // files may exist WITHOUT medium tags — show them instead of asking a
     // question the library cannot answer
     if (!matchPaper(index, { year: st.year, subject: st.subject, cat: st.cat }).length) {
-      delete interviews[sk];
+      if (st.id) ivRemove(sk, st.id);
       return paperNotFound(ctx, index, st, degraded);
     }
     if (st.medium) {   // a medium WAS requested but nothing matches it
-      delete interviews[sk];
+      if (st.id) ivRemove(sk, st.id);
       return paperNotFound(ctx, index, st, degraded);
     }
-    delete interviews[sk];
+    if (st.id) ivRemove(sk, st.id);
     return directPaperRequest(sock, mek, m, ctx, st);
   }
   if (!st.subject && st.year && !subjectsForYear(index, st.year).length) {
-    delete interviews[sk];
+    if (st.id) ivRemove(sk, st.id);
     return paperNotFound(ctx, index, st, degraded);
   }
-  interviews[sk] = st;
+  // remember it: a tap continues ITS request in place; a new ask joins the
+  // student's short-term memory as its own entry (oldest dropped past cap)
+  const list = ivList(sk);
+  if (st.id) {
+    const i = list.findIndex((s) => s.id === st.id);
+    if (i >= 0) list[i] = st; else list.push(st);
+  } else {
+    st.id = ivNewId(list);
+    list.push(st);
+    while (list.length > MAX_PENDING) list.shift();
+  }
+  interviews[sk] = list;
   return askMissing(sock, mek, m, ctx, st, index);
 }
 
@@ -1105,14 +1141,26 @@ const ppickCommand = cmd({
 }, async (sock, mek, m, ctx) => {
   const { args, reply } = ctx;
   const sk = skey(ctx);
-  const field = String(args[0] || '').toLowerCase();
-  const value = args.slice(1).join(' ').trim().toLowerCase();
+  pruneInterviews();
+  let field = String(args[0] || '').toLowerCase();
+  let value = args.slice(1).join(' ').trim().toLowerCase();
+  let st = null;
+  if (!FIELD_WORDS.has(field)) {
+    // tapped from a specific card: ".ppick <reqId> year 2016" — the tap must
+    // answer ITS OWN request, never whichever one is newest
+    const byId = ivList(sk).find((s) => s.id === field);
+    if (byId) {
+      st = byId;
+      field = String(args[1] || '').toLowerCase();
+      value = args.slice(2).join(' ').trim().toLowerCase();
+    }
+  }
 
   if (field === 'cancel') {
-    delete interviews[sk];
+    delete interviews[sk];   // cancel clears ALL pending requests
     return reply('👌 Cancelled — send *papers* whenever you need 📚');
   }
-  const st = interviews[sk] || { subject: null, year: null, medium: null, type: null, cat: null };
+  if (!st) st = ivNewest(sk) || { id: null, subject: null, year: null, medium: null, type: null, cat: null };
   if (field === 'year' && /^\d{4}$/.test(value)) {
     st.year = parseInt(value, 10);
   } else if (field === 'medium') {
@@ -1182,7 +1230,7 @@ cmd({
       // "marking", "physics") is taken as the reply; greetings and other
       // chat fall through to their own flows (greeting guide / silence)
       const ivKey = `${extra.message?.key?.remoteJid}:${extra.sender}`;
-      if (interviews[ivKey] && tokens.length <= 2) {
+      if (ivList(ivKey).length > 0 && tokens.length <= 2) {
         const d2 = dimsFromText(norm);
         const dimCount = ['subject', 'medium', 'cat', 'type'].filter((k) => d2[k]).length +
           (/^(19|20)\d{2}$/.test(tokens[0]) ? 1 : 0);
@@ -1242,7 +1290,7 @@ cmd({
     const earlyBody = String(ctx.body || '');
     const earlyDims = dimsFromText(earlyBody);
     const earlyParsed = parsePaperQuery(earlyBody);
-    const guideCandidate = !interviews[skey(ctx)] &&
+    const guideCandidate = ivList(skey(ctx)).length === 0 &&
       !(earlyParsed && earlyParsed.year && (earlyParsed.subject || earlyParsed.medium)) &&
       !earlyDims.subject && !earlyDims.year;
     if (!(guideCandidate && guideGate.recent(ctx))) {
@@ -1279,25 +1327,27 @@ cmd({
       return usageGuide(ctx);
     }
 
-    // pending interview — decide: ANSWER the question, or SUPERSEDE with a
-    // new request? (a new paper request must never be merged into the old one)
+    // pending requests in short-term memory — decide: ANSWER the newest
+    // question, or REMEMBER a new request alongside it? (never merged)
     const skIv = skey(ctx);
-    if (interviews[skIv]) {
-      const iv = interviews[skIv];
+    pruneInterviews();
+    const pending = ivList(skIv);
+    if (pending.length) {
+      const iv = pending[pending.length - 1];   // typed text answers the NEWEST card
       const ans = parseInterviewAnswer(body);
       const nowParsed = parsePaperQuery(body);
       const nowDims = dimsFromText(body);
       const nowTokens = body.split(/\s+/).filter(Boolean);
 
-      // complete new request → NEWEST WINS (drop the old interview entirely)
+      // complete new request → NEWEST WINS (deliver it now; older pendings
+      // stay in memory and stay answerable from their own cards)
       const completeNew = (nowParsed && nowParsed.year && (nowParsed.subject || nowParsed.medium)) ||
         (nowDims.subject && nowDims.year);
       if (completeNew) {
-        delete interviews[skIv];
         return startOrContinuePaperRequest(sock, mek, m, ctx, nowParsed || nowDims);
       }
       if (ans && ans.cancel) {
-        delete interviews[skIv];
+        delete interviews[skIv];   // cancel clears ALL pending requests
         return ctx.reply('👌 Cancelled — send *papers* whenever you need 📚');
       }
       // which field is the pending question actually asking for?
@@ -1313,14 +1363,13 @@ cmd({
           : dimsPresent.find((d) => d === 'type' || d === 'cat');
         return ppickCommand.function(sock, mek, m, pass({ args: [field, String(nowDims[field])] }));
       }
-      // a NEW partial paper ask ("i want physics papers now") → supersede:
-      // fresh interview on the new topic — never merged with the old one
+      // a NEW partial paper ask ("i want physics papers now") → remembered as
+      // its OWN request; the older ones stay alive and answerable via their cards
       if (nowDims.subject || nowDims.year) {
-        delete interviews[skIv];
         return startOrContinuePaperRequest(sock, mek, m, ctx, nowDims);
       }
-      // anything else while an interview is pending: fall through SILENTLY —
-      // no react, no AI, no guide. The interview stays alive for 30 min.
+      // anything else while a request is pending: fall through SILENTLY —
+      // no react, no AI, no guide. Memory lives for 24 hours.
       return;
     }
 
@@ -1407,5 +1456,6 @@ module.exports = {
   resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
     sendHubCard,
   buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
+  __interviews: interviews,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
 };
