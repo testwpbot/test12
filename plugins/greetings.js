@@ -8,7 +8,6 @@ const { cmd } = require('../command');
 const config = require('../config');
 const { sendButtons } = require('../lib/buttons');
 const guideGate = require('../lib/guidegate');
-const { generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 
 let settingsPlugin = null;
 try { settingsPlugin = require('./settings'); } catch (e) { /* optional */ }
@@ -185,32 +184,23 @@ cmd({
     `Get AI Past Papers and Paper Schemes instantly\n\n` +
     `Tap below to join now 👇`;
   try {
-    // CTA URL button — build the raw proto with generateWAMessageFromContent
-    // and RELAY it (sock.sendMessage cannot build interactiveMessage: it
-    // throws "Invalid media type"). This is the same relay path the button
-    // libraries use; tapping "Join Now 🚀" opens the group invite directly.
-    const inviteMsg = generateWAMessageFromContent(ctx.from, {
-      viewOnceMessage: {
-        message: {
-          messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
-          interactiveMessage: {
-            body: { text: invite },
-            footer: { text: 'Almate.edu.lk 🇱🇰' },
-            nativeFlowMessage: {
-              buttons: [{
-                name: 'cta_url',
-                buttonParamsJson: JSON.stringify({
-                  display_text: 'Join Now 🚀',
-                  url: config.ALMATE_GROUP_LINK,
-                  merchant_url: config.ALMATE_GROUP_LINK
-                })
-              }]
-            }
-          }
-        }
-      }
-    }, { userJid: ctx.from });
-    await sock.relayMessage(ctx.from, inviteMsg.message, { messageId: inviteMsg.key.id });
+    // CTA URL button via gifted-btns sendButtons — its `buttons` array
+    // accepts NATIVE { name: 'cta_url', buttonParamsJson } entries
+    // (official README). Same proven path as the welcome-card buttons;
+    // the library injects the biz/interactive/native_flow nodes WhatsApp
+    // requires. Tapping "Join Now 🚀" opens the group invite directly.
+    await sendButtons(sock, ctx.from, {
+      text: invite,
+      footer: 'Almate.edu.lk 🇱🇰',
+      buttons: [{
+        name: 'cta_url',
+        buttonParamsJson: JSON.stringify({
+          display_text: 'Join Now 🚀',
+          url: config.ALMATE_GROUP_LINK,
+          merchant_url: config.ALMATE_GROUP_LINK
+        })
+      }]
+    }, { quoted: mek });
   } catch (e) {
     // fallback: the plain link still opens/preview-taps the group
     console.error('stream invite button failed:', (e && e.message) || e);
