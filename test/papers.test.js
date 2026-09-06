@@ -453,8 +453,8 @@ const ok = (cond, name, extra) => {
   smart.geminiReset();
   global.AI_EXPANSION = '2019 chemistry sinhala medium';
   await papersCmd.function(sock, mek, {}, ctx({ from: 'AIP7@g.us', args: ['මට', 'ඕනෙ', 'පත්රයක්'] }));
-  ok(lastReply().includes('Paper not found') && lastReply().includes('2019 Chemistry — Sinhala medium'),
-     'AI-normalised query flows into the structured engine', lastReply());
+  ok(lastGiftText().includes('Paper/Scheme Not Found') && lastGiftButtons().some((b) => b.id === '.subjects'),
+     'AI-normalised query flows into the structured engine (not-found card + subjects button)', lastGiftText().slice(0, 90));
   delete process.env.GEMINI_API_KEY;
   delete global.AI_EXPANSION;
   smart.geminiReset();
@@ -477,6 +477,9 @@ const ok = (cond, name, extra) => {
   ok(fFF('give me a chemistry paper') === true, 'trigger: casual paper ask admitted');
   let ffCard = null;
   const ffM = { sendButtonMenu: async (payload) => { ffCard = payload; } };
+  function lastGiftText() { return (((global.__giftedCalls || []).at(-1) || {}).payload || {}).text || ''; }
+  function lastGiftButtons() { return (((global.__giftedCalls || []).at(-1) || {}).payload || {}).buttons || []; }
+
   const ppickCmd = commands.find((c) => c.pattern === 'ppick');
   ok(!!ppickCmd, 'ppick command registered for interview taps');
 
@@ -570,9 +573,8 @@ const ok = (cond, name, extra) => {
   sent = [];
   ffCard = null;
   await npFF.function(sock, mek, ffM, { from: 'FF6@g.us', body: 'Biology 2020 past paper', sender: '94778111117@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  const nfBio = sent.map((s) => s.reply).join('\n');
-  ok(!ffCard && nfBio.includes('Paper not found') && nfBio.includes('2020 Biology'),
-     "'Biology 2020 past paper' with no 2020 biology → clean not-found", nfBio.slice(0, 120));
+  ok(!ffCard && lastGiftText().includes('Paper/Scheme Not Found'),
+     "'Biology 2020 past paper' with no 2020 biology → clean not-found card", lastGiftText().slice(0, 120));
 
   // YEAR PIN in the search engine: 'biology 2020' can never return 2016 biology
   const scopeIdx = (await (async () => {
@@ -605,9 +607,8 @@ const ok = (cond, name, extra) => {
   sent = [];
   ffCard = null;
   await npFF.function(sock, mek, ffM, { from: 'FT1@g.us', body: 'i want chemistry marking scheme', sender: '94778222221@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  const ft1 = sent.map((s) => s.reply).join('\n');
-  ok(!ffCard && ft1.includes('Marking scheme not found') && ft1.includes('question paper'),
-     'marking requested, none exists → clean not-found + what exists (never the paper)', ft1.slice(0, 140));
+  ok(!ffCard && lastGiftText().includes('Paper/Scheme Not Found'),
+     'marking requested, none exists → clean not-found card (never the paper)', lastGiftText().slice(0, 120));
   // marking exists → ONLY the marking file
   global.AI_INTERPRET = '{"action":"find","year":2016,"subject":"biology","medium":"sinhala","type":"marking"}';
   sent = [];
@@ -856,10 +857,15 @@ const ok = (cond, name, extra) => {
   // not found — year exists in library → hint with available subjects
   sent = [];
   await np.function(sock, mek, mCard, { from: 'SR3@g.us', body: '2016 chemistry sinhala medium', reply: async (t) => { sent.push({ reply: t }); } });
-  const nf = sent.map((s) => s.reply).join('\n');
-  ok(nf.includes('Paper not found') && nf.includes('2016 Chemistry — Sinhala medium'),
-     'not-found message names the requested combo', nf.slice(0, 140));
-  ok(nf.includes('Agriculture'), 'not-found hints the subjects available that year');
+  const nf = lastGiftText();
+  ok(nf.includes('Paper/Scheme Not Found') && nf.includes('Available:') && nf.includes('A/L Subjects'),
+     'not-found card shows the live Available block (years/mediums/subjects)', nf.slice(0, 200));
+  ok(nf.includes('currently being prepared') && nf.includes('2022 Papers'),
+     'not-found card: next year flagged as being prepared (live: max 2021 → 2022)', nf.slice(-160));
+  ok(nf.includes('2016 - 2021 Papers') && nf.includes('Sinhala | English'),
+     'not-found card: year range + mediums are LIVE from the index', nf.slice(0, 260));
+  ok(lastGiftButtons().some((b) => b.id === '.subjects' && b.text.includes('Available Subjects')),
+     'not-found card carries the Available Subjects button');
 
   // prefixed structured query through .papers → same button card
   sent = [];
@@ -1461,6 +1467,34 @@ require('../plugins/greetings.js');
     ok(ffCard && ffCard.sections.length === 1 && ffCard.sections[0].title === '🧭 Tap your answer',
        'CH2: ≤10 options → single friendly section (unchanged look)', JSON.stringify(ffCard && ffCard.sections.map((s) => s.title)));
   }
+
+  /* 16af. live Available-Subjects list + not-found button flow */
+  guideGate.reset();
+  const sbSender = '94779555508@s.whatsapp.net';
+  const sbCmd = commands.filter((c) => c.pattern === 'subjects').pop();
+  ok(!!sbCmd, '.subjects command registered (Available Subjects button)');
+  sent = [];
+  await sbCmd.function(sock, mek, {}, ctx({ from: 'SB@g.us', sender: sbSender }));
+  const sbMsg = lastReply();
+  ok(sbMsg.includes('📚 *Available A/L Subjects*') && sbMsg.includes('Our database currently supports'),
+     '.subjects → live Available Subjects message', sbMsg.slice(0, 90));
+  ok(sbMsg.includes('01 – ') && sbMsg.includes('Agriculture') && sbMsg.includes('Chemistry') &&
+     !sbMsg.includes('Sanskrit'),
+     '.subjects list is LIVE from the Drive index (fixture subjects only)', sbMsg.slice(0, 400));
+  ok(sbMsg.includes('🌐 Available Mediums:') && sbMsg.includes('Sinhala | English') &&
+     sbMsg.includes('📅 Available Years:') && sbMsg.includes('2016 - 2021'),
+     '.subjects shows live mediums + year range');
+  ok(/\*\d{4}-(Sinhala|English)-[A-Za-z ]+\*/.test(sbMsg) && sbMsg.includes('👇🏻'),
+     '.subjects ends with a REAL example from the library + 👇🏻', sbMsg.slice(-200));
+  // unknown subject in the interview → live subjects list
+  await mmNP.function(sock, mek, ffM, { from: 'SB@g.us', body: 'i want 2020 past paper', sender: sbSender, reply: async () => {} });
+  ffCard = null;
+  await mmPpick.function(sock, mek, ffM, ctx({ from: 'SB@g.us', args: ['year', '2020'], sender: sbSender }));
+  ok(ffCard && ffCard.listTitle === '📘 Pick a subject…', 'SB: subject question open', ffCard && ffCard.listTitle);
+  sent = [];
+  await mmPpick.function(sock, mek, ffM, ctx({ from: 'SB@g.us', args: ['subject', 'xyzabc'], sender: sbSender }));
+  ok(lastReply().includes('Available A/L Subjects') && lastReply().includes('Our database currently supports'),
+     'unknown subject answer → live Available Subjects list (not the old one-liner)', lastReply().slice(0, 90));
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

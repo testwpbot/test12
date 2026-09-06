@@ -580,27 +580,56 @@ function filterByType(index, files, type) {
 }
 
 /** The "not found" reply with available-subjects hint (shared). */
-async function paperNotFound(ctx, index, q, degraded) {
+async function paperNotFound(sock, mek, ctx, index, q, degraded) {
+  // LIVE library facts — never hardcoded lists
+  const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
+  const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
+  const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
+  const nSubs = new Set(cls.map((c) => c.subject).filter(Boolean)).size;
 
-  const subLabel = SUBJECTS[q.subject] ? SUBJECTS[q.subject].label : (q.subjectRaw || '');
-  const medLabel = MEDIUMS[q.medium] ? MEDIUMS[q.medium].label : null;
-  const catLabel = CATEGORIES[q.cat] && q.cat !== 'past' ? CATEGORIES[q.cat].label : null;
-  const label = `${catLabel ? catLabel + ' ' : ''}${q.year || ''}${subLabel ? ` ${subLabel}` : ''}${medLabel ? ` — ${medLabel} medium` : ''}`.trim();
-  const yearFolder = index.folders.find((f) => (f.path || []).some((n) => String(n).includes(String(q.year || ''))));
-  let hint = '';
-  if (yearFolder) {
-    const depth = yearFolder.path.length;
-    const subs = [...new Set(index.folders
-      .filter((f) => f.path.length === depth + 1 && f.path[depth - 1] === yearFolder.path[depth - 1])
-      .map((f) => f.path[depth]))].slice(0, 8);
-    if (subs.length) hint = `\n📚 In *${q.year}* we have: ${subs.join(', ')}`;
+  let msg = '❌ *Paper/Scheme Not Found*\n\nWe could not find this paper in our database.';
+  if (cls.length) {
+    msg += `\n\n*Available:*\n` +
+      `📅 ${years[0]} - ${years[years.length - 1]} Papers\n` +
+      `🌐 ${meds.map((m) => MEDIUMS[m].label).join(' | ')}\n` +
+      `📚 ${nSubs} A/L Subjects\n\n` +
+      `> To view available subject names: tap the button below 👇`;
   }
-  return ctx.reply(
-    `❌ *Paper not found:* ${label}\n` +
-    `That combination isn't in the library yet.${hint}\n\n` +
-    `💡 Try another medium, or send *papers* to browse 📂` +
-    (degraded ? '\n⚠️ _Saved copy shown — Drive unreachable right now._' : '')
-  );
+  msg += '\n\nPlease check your:\n* Year\n* Language Medium\n* Subject\n\nand try again. ➡️';
+  if (years.length) msg += `\n\n📌 ${years[years.length - 1] + 1} Papers are currently being prepared....`;
+  if (degraded) msg += '\n⚠️ _Saved copy shown — Drive unreachable right now._';
+  try {
+    await sendButtons(sock, ctx.from, {
+      text: msg,
+      footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+      buttons: [{ id: `${config.PREFIX}subjects`, text: '📋 Available Subjects' }]
+    }, { quoted: mek });
+  } catch (e) {
+    await ctx.reply(`${msg}\n\n📋 Available subjects: send *subjects*`);
+  }
+}
+
+/** Live "Available Subjects" message — built from the Drive index. */
+function subjectsListMessage(index) {
+  const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
+  const codes = [...new Set(cls.map((c) => c.subject).filter(Boolean))]
+    .sort((a, b) => String(SUBJECTS[a] ? SUBJECTS[a].label : a).localeCompare(String(SUBJECTS[b] ? SUBJECTS[b].label : b)));
+  const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
+  const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
+  const L = [];
+  L.push('📚 *Available A/L Subjects*', '');
+  L.push(`Our database currently supports *${codes.length}* subjects:`, '');
+  codes.forEach((c, i) => L.push(`${String(i + 1).padStart(2, '0')} – ${SUBJECTS[c].label}`));
+  if (meds.length) L.push('', '🌐 Available Mediums:', meds.map((m) => MEDIUMS[m].label).join(' | '));
+  if (years.length) L.push('', '📅 Available Years:', `${years[0]} - ${years[years.length - 1]}`);
+  // a REAL example: an actual (year, medium, subject) combo from the library
+  const ex = cls.find((c) => c.year === years[years.length - 1] && c.medium && c.subject) ||
+             cls.find((c) => c.year && c.medium && c.subject) || null;
+  if (ex) {
+    L.push('', 'Send your request format:', 'Year-Medium-Subject', '',
+      'Example:', `*${ex.year}-${MEDIUMS[ex.medium].label}-${SUBJECTS[ex.subject].label}*`, '', '👇🏻');
+  }
+  return L.join('\n');
 }
 
 /** Ask ONE question (with tap buttons) for the next missing detail. */
@@ -693,18 +722,18 @@ async function startOrContinuePaperRequest(sock, mek, m, ctx, q) {
     // question the library cannot answer
     if (!matchPaper(index, { year: st.year, subject: st.subject, cat: st.cat }).length) {
       if (st.id) ivRemove(sk, st.id);
-      return paperNotFound(ctx, index, st, degraded);
+      return paperNotFound(sock, mek, ctx, index, st, degraded);
     }
     if (st.medium) {   // a medium WAS requested but nothing matches it
       if (st.id) ivRemove(sk, st.id);
-      return paperNotFound(ctx, index, st, degraded);
+      return paperNotFound(sock, mek, ctx, index, st, degraded);
     }
     if (st.id) ivRemove(sk, st.id);
     return directPaperRequest(sock, mek, m, ctx, st);
   }
   if (!st.subject && st.year && !subjectsForYear(index, st.year).length) {
     if (st.id) ivRemove(sk, st.id);
-    return paperNotFound(ctx, index, st, degraded);
+    return paperNotFound(sock, mek, ctx, index, st, degraded);
   }
   // remember it: a tap continues ITS request in place; a new ask joins the
   // student's short-term memory as its own entry (oldest dropped past cap)
@@ -884,7 +913,7 @@ async function directPaperRequest(sock, mek, m, ctx, q) {
       (degraded ? '\n⚠️ _Saved copy shown — Drive unreachable right now._' : '')
     );
   }
-  return paperNotFound(ctx, index, q, degraded);
+  return paperNotFound(sock, mek, ctx, index, q, degraded);
 }
 
 /* ── papers welcome — image card + 2 buttons (Past Papers / Marking) ─── */
@@ -1175,6 +1204,23 @@ const paperCommand = cmd({
   }
 });
 
+/* ── .subjects — live A/L subject list from the Drive library ─────────── */
+cmd({
+  pattern: 'subjects',
+  alias: ['subjectlist'],
+  react: '📋',
+  desc: 'Show every subject/medium/year in the library',
+  category: 'main',
+  filename: __filename
+}, async (sock, mek, m, ctx) => {
+  try {
+    const { index } = await getIndex();
+    return ctx.reply(subjectsListMessage(index));
+  } catch (e) {
+    return ctx.reply('📚 The papers library is being set up — please try again shortly. 🛠️');
+  }
+});
+
 /* ── .pp — PAST PAPERS interview (welcome-card button) ────────────────── */
 cmd({
   pattern: 'pp',
@@ -1235,7 +1281,15 @@ const ppickCommand = cmd({
     st.medium = mk;
   } else if (field === 'subject') {
     const sv = subjectFromTokens(value.split(/\s+/)) || (SUBJECTS[value] ? value : null);
-    if (!sv) return reply("🤔 I didn't catch the subject — e.g. *chem*, *phy*, *bio*.");
+    if (!sv) {
+      // unknown subject → show what the library ACTUALLY has (live)
+      try {
+        const { index } = await getIndex();
+        return reply(subjectsListMessage(index));
+      } catch (e) {
+        return reply("🤔 I didn't catch the subject — e.g. *chem*, *phy*, *bio*.");
+      }
+    }
     st.subject = sv;
   } else if (field === 'type') {
     st.type = ['marking', 'mcq', 'essay', 'paper'].includes(value) ? value : null;
@@ -1548,6 +1602,7 @@ module.exports = {
     sendHubCard,
   buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
   __interviews: interviews,
+  subjectsListMessage,
   __askMissing: askMissing,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
 };
