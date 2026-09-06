@@ -791,12 +791,12 @@ const ok = (cond, name, extra) => {
   // tap 📚 → the clean year-picker flow
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'NP@g.us', args: ['menu'] }));
-  ok(lastCard && lastCard.listTitle === '🗓️ Pick a year…', "tap 📚 (or '.pp') opens the year picker", lastCard && lastCard.listTitle);
+  ok(lastCard && lastCard.listTitle === '📘 Pick a subject…', "tap 📚 (or '.pp') opens the SUBJECT picker (subject first, then year)", lastCard && lastCard.listTitle);
   const ppCmd = commands.filter((c) => c.pattern === 'pp').pop();
   ok(!!ppCmd, '.pp command registered (Past Papers button)');
   lastCard = null;
   await ppCmd.function(sock, mek, mCard, ctx({ from: 'NP@g.us' }));
-  ok(lastCard && lastCard.listTitle === '🗓️ Pick a year…', "tap 📚 Past Papers → year question card (clean flow)", lastCard && lastCard.listTitle);
+  ok(lastCard && lastCard.listTitle === '📘 Pick a subject…', "tap 📚 Past Papers → subject question card (clean flow)", lastCard && lastCard.listTitle);
   // 'chemistry past papers' (AI not configured) → LOCAL fallback search
   // still answers with results — the old format engine is the fallback now
   sent = [];
@@ -1050,8 +1050,8 @@ require('../plugins/greetings.js');
      "no-prefix 'papers' → welcome image card (menu is one tap away)", JSON.stringify({ img: !!pw.image, t: (pw.text || '').slice(0, 60), hub: !!lastCard }));
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'FR@g.us', args: ['menu'], ...A }));
-  ok(lastCard && lastCard.listTitle === '🗓️ Pick a year…',
-     "'.papers menu' → the clean year-picker flow (no raw folder list)", lastCard && lastCard.listTitle);
+  ok(lastCard && lastCard.listTitle === '📘 Pick a subject…',
+     "'.papers menu' → the clean subject-first flow (no raw folder list)", lastCard && lastCard.listTitle);
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'FR@g.us', args: ['browse'], ...A }));
   ok(lastCard && lastCard.title.includes('AI Mate Papers') && !lastCard.text.includes('/ Physics'),
@@ -1390,7 +1390,7 @@ require('../plugins/greetings.js');
   ok(!!msCmd && !!aiCmd && !!stCmd, '.ms / .ai / .stream commands registered for the welcome-card buttons');
   ffCard = null;
   await msCmd.function(sock, mek, ffM, ctx({ from: 'GA@g.us', args: [], sender: gaSender }));
-  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'tap 2 (Marking Schemes) → marking-scheme interview opens (year question)', ffCard && ffCard.listTitle);
+  ok(ffCard && ffCard.listTitle === '📘 Pick a subject…', 'tap 2 (Marking Schemes) → marking-scheme interview opens (subject question first)', ffCard && ffCard.listTitle);
   const gaIv = (mmPapers.__interviews['GA@g.us:' + gaSender] || [])[0];
   ok(gaIv && gaIv.type === 'marking', 'marking type remembered in the interview state');
   sent = [];
@@ -1561,6 +1561,25 @@ require('../plugins/greetings.js');
     sent = [];
     await sbc.function(sock, mek, {}, ctx({ from: 'SBC@g.us', args: ['check'], sender: '94779555509@s.whatsapp.net', isOwner: false }));
     ok(lastReply().includes('⛔ Owner only.'), '.subjects check is owner-only');
+  }
+
+  /* 16ai. hidden years — 2013/2026 never offered or shown */
+  {
+    const hyIdx = { root: { name: 'X' }, folders: [], files: [
+      { name: '2013_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2013'] },
+      { name: '2016_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2016'] },
+      { name: '2020_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2020'] },
+      { name: '2026_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2026'] }
+    ] };
+    ffCard = null;
+    await mmPapers.__askMissing(sock, mek, ffM, ctx({ from: 'HY@g.us', sender: '94779555510@s.whatsapp.net' }),
+      { id: 'hy01', year: null, subject: 'chemistry', medium: null, type: null, cat: 'past', at: Date.now() }, hyIdx);
+    const hyTitles = ffCard.sections.flatMap((s) => s.rows.map((r) => r.title)).join('|');
+    ok(hyTitles.includes('2016') && hyTitles.includes('2020') && !hyTitles.includes('2013') && !hyTitles.includes('2026'),
+       'HY: year picker shows 2016/2020 but never 2013 or 2026', hyTitles);
+    const nfMsg = mmPapers.subjectsListMessage(hyIdx);
+    ok(nfMsg.includes('2016 - 2020') && !nfMsg.includes('2013') && !nfMsg.includes('2026'),
+       'HY: live year range skips 2013/2026 too', nfMsg.slice(-260));
   }
 
   /* 16. extractId */

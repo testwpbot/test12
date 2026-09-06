@@ -29,6 +29,7 @@ const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
 const PAGE_SIZE = 30;                    // entries per text list message
 const BUTTON_ROWS = 10;                  // rows per list SECTION (WhatsApp cap)
 const MAX_CARD_ROWS = 50;                // absolute row cap (5 sections × 10)
+const HIDDEN_YEARS = new Set([2013, 2026]);   // stray year folders — never offered (client has 2015-2025)
 const MAX_ACTIVE_DOWNLOADS = 2;          // parallel uploads to WhatsApp
 const DEFAULT_MAX_MB = 95;
 const DEFAULT_COOLDOWN = 30;             // seconds between downloads per user
@@ -539,12 +540,12 @@ function yearsFor(index, subject, medium, cat) {
     if (cat && c.cat !== cat) continue;
     if (c.year) years.add(c.year);
   }
-  return [...years].sort();
+  return [...years].filter((y) => !HIDDEN_YEARS.has(y)).sort();
 }
 function subjectsForYear(index, year) {
   const subs = new Set();
   for (const c of classifyAll(index).values()) {
-    if (c.year === year && c.subject) subs.add(c.subject);
+    if (c.subject && (!year || c.year === year)) subs.add(c.subject);
   }
   return [...subs].sort();
 }
@@ -583,7 +584,7 @@ function filterByType(index, files, type) {
 async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
   // LIVE library facts — never hardcoded lists
   const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
-  const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
+  const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].filter((y) => !HIDDEN_YEARS.has(y)).sort((a, b) => a - b);
   const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
   const nSubs = smart.subjectsInIndex(index).length;   // live: files + folders + unknown-subject folders
 
@@ -614,7 +615,7 @@ async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
 function subjectsListMessage(index) {
   const codes = smart.subjectsInIndex(index);   // real-time: names + folders + paths
   const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
-  const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
+  const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].filter((y) => !HIDDEN_YEARS.has(y)).sort((a, b) => a - b);
   const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
   const L = [];
   L.push('📚 *Available A/L Subjects*', '');
@@ -642,20 +643,20 @@ async function askMissing(sock, mek, m, ctx, st, index) {
   ].filter(Boolean).join(' · ');
 
   let rows = [], question = '', listTitle = '', more = '';
-  if (!st.year) {
+  if (!st.subject) {
+    const subs = subjectsForYear(index, st.year);
+    const shown = subs.slice(0, MAX_CARD_ROWS);
+    rows = shown.map((s) => ({ id: `${config.PREFIX}ppick ${st.id} subject ${s}`, title: `📘 ${SUBJECTS[s].label}`, description: `${st.year ? st.year + ' papers' : 'Papers'}` }));
+    if (subs.length > shown.length) more = `\n📄 …and ${subs.length - shown.length} more — type the subject name`;
+    question = '📘 *Which subject do you need?*';
+    listTitle = '📘 Pick a subject…';
+  } else if (!st.year) {
     const years = yearsFor(index, st.subject, st.medium, st.cat);
     const shown = years.slice(0, MAX_CARD_ROWS);
     rows = shown.map((y) => ({ id: `${config.PREFIX}ppick ${st.id} year ${y}`, title: `📅 ${y}`, description: `${st.subject ? SUBJECTS[st.subject].label : 'Papers'} ${y}` }));
     if (years.length > shown.length) more = `\n📄 …and ${years.length - shown.length} more years — type the year`;
     question = '📅 *What year do you need?*';
     listTitle = '🗓️ Pick a year…';
-  } else if (!st.subject) {
-    const subs = subjectsForYear(index, st.year);
-    const shown = subs.slice(0, MAX_CARD_ROWS);
-    rows = shown.map((s) => ({ id: `${config.PREFIX}ppick ${st.id} subject ${s}`, title: `📘 ${SUBJECTS[s].label}`, description: `${st.year} papers` }));
-    if (subs.length > shown.length) more = `\n📄 …and ${subs.length - shown.length} more — type the subject name`;
-    question = '📘 *Which subject do you need?*';
-    listTitle = '📘 Pick a subject…';
   } else {
     const meds = mediumsFor(index, st.year, st.subject);
     rows = meds.map((mk) => ({ id: `${config.PREFIX}ppick ${st.id} medium ${mk}`, title: `🌐 ${MEDIUMS[mk].label}`, description: `${st.year} ${SUBJECTS[st.subject].label} — ${MEDIUMS[mk].label}` }));
@@ -1480,7 +1481,7 @@ cmd({
         return ctx.reply('👌 Cancelled — send *papers* whenever you need 📚');
       }
       // which field is the pending question actually asking for?
-      const expectedField = !iv.year ? 'year' : (!iv.subject ? 'subject' : 'medium');
+      const expectedField = !iv.subject ? 'subject' : (!iv.year ? 'year' : 'medium');
       const dimsPresent = ['subject', 'year', 'medium', 'type', 'cat'].filter((k) => nowDims[k]);
       const bare = nowTokens.length <= 2 && dimsPresent.length >= 1 && dimsPresent.length <= 2;
       const answersPending = bare && (dimsPresent.includes(expectedField) ||
