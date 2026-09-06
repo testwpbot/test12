@@ -144,7 +144,7 @@ cmd({
       // taps arrive as buttonsResponseMessage → body → normal command pipeline
       await sendButtons(sock, ctx.from, {
         text: card,
-        footer: 'almate.edu.lk',
+        footer: 'almate.edu.lk 🇱🇰',
         buttons: [
           { id: '.pp', text: '📚 Past Papers' },
           { id: '.ms', text: '📖 Marking Schemes' },
