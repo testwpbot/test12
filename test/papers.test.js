@@ -1518,7 +1518,11 @@ require('../plugins/greetings.js');
     // subject folder → must still count (vocabulary-independent)
     const invIdx = { root: { name: 'X' }, folders: [
       { name: 'Japanese', path: ['X', 'Japanese'] },
-      { name: 'Portuguese', path: ['X', 'Portuguese'] }
+      { name: 'Portuguese', path: ['X', 'Portuguese'] },
+      { name: 'Food Technology', path: ['X', 'Food Technology'] },
+      { name: '1️⃣ A/L Past Papers', path: ['X', '1️⃣ A/L Past Papers'] },
+      { name: 'ENGINEERING  TECHNOLOGY', path: ['X', 'ENGINEERING  TECHNOLOGY'] },
+      { name: 'Languages', path: ['X', 'Languages'] }
     ], files: [
       { name: '2020_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2020'] },
       { name: '2020_තොරතුරු_තාක්ෂණය.pdf', isFolder: false, path: ['X', '2020'] },
@@ -1531,6 +1535,9 @@ require('../plugins/greetings.js');
        'inventory: subjects found via folder name, Sinhala alias and path alias', JSON.stringify(inv));
     ok(ilabels.includes('Portuguese'),
        'inventory: UNKNOWN subject folder still counted+listed (real-time safety net)', JSON.stringify(ilabels));
+    ok(!ilabels.some((l) => /technology$/i.test(l) && l !== 'Engineering Technology') &&
+       !ilabels.includes('A/L Past Papers') && !ilabels.includes('Languages'),
+       'inventory: stream folders, decorated noise, dupes and generic folders excluded', JSON.stringify(ilabels));
     ok(!ikeys.includes('biology') && !ilabels.includes('Biology') && !ilabels.includes('Sinhala'),
        'inventory: absent subjects and medium words never invented', JSON.stringify(ilabels));
     ffCard = null;
