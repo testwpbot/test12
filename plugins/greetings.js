@@ -8,6 +8,7 @@ const { cmd } = require('../command');
 const config = require('../config');
 const { sendButtons } = require('../lib/buttons');
 const guideGate = require('../lib/guidegate');
+const { generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 
 let settingsPlugin = null;
 try { settingsPlugin = require('./settings'); } catch (e) { /* optional */ }
@@ -184,15 +185,15 @@ cmd({
     `Get AI Past Papers and Paper Schemes instantly\n\n` +
     `Tap below to join now 👇`;
   try {
-    // CTA URL button built NATIVELY with Baileys (no wrapper guessing):
-    // tapping "Join Now 🚀" opens the group invite directly on the
-    // student's phone — no reply message, nothing unsupported
-    await sock.sendMessage(ctx.from, {
+    // CTA URL button — build the raw proto with generateWAMessageFromContent
+    // and RELAY it (sock.sendMessage cannot build interactiveMessage: it
+    // throws "Invalid media type"). This is the same relay path the button
+    // libraries use; tapping "Join Now 🚀" opens the group invite directly.
+    const inviteMsg = generateWAMessageFromContent(ctx.from, {
       viewOnceMessage: {
         message: {
           messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
           interactiveMessage: {
-            contextInfo: { externalAdReply: { showAdAttribution: false } },
             body: { text: invite },
             footer: { text: 'Almate.edu.lk 🇱🇰' },
             nativeFlowMessage: {
@@ -208,7 +209,8 @@ cmd({
           }
         }
       }
-    }, { quoted: mek });
+    }, { userJid: ctx.from });
+    await sock.relayMessage(ctx.from, inviteMsg.message, { messageId: inviteMsg.key.id });
   } catch (e) {
     // fallback: the plain link still opens/preview-taps the group
     console.error('stream invite button failed:', (e && e.message) || e);

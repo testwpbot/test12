@@ -148,7 +148,10 @@ const paperCmd = commands.find((c) => c.pattern === 'paper');
 const setupCmd = commands.find((c) => c.pattern === 'papersetup');
 
 let sent = [];
-const sock = { sendMessage: async (jid, content, opts) => { sent.push({ jid, content, opts }); } };
+const sock = {
+  sendMessage: async (jid, content, opts) => { sent.push({ jid, content, opts }); },
+  relayMessage: async (jid, message, opts) => { sent.push({ jid, content: message, opts }); }
+};
 const mek = { key: { id: 'MSGXYZ', remoteJid: 'GROUP@g.us' } };
 const replies = () => sent.filter((s) => s.reply !== undefined).map((s) => s.reply);
 const lastReply = () => replies()[replies().length - 1] || '';
