@@ -1332,7 +1332,11 @@ cmd({
       if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) return false;
 
       const body = String(text || '').trim();
-      if (!body || body.length > 60 || /\n|https?:\/\//i.test(body)) return false;
+      if (!body || body.length > 200 || /https?:\/\//i.test(body)) return false;
+      // MULTI-LINE asks: "I need\n\nSft 2023 tamil medium past paper" —
+      // lines are joined below, so up to 3 lines are understood as one ask
+      const lineCount = body.split('\n').filter((l) => l.trim()).length;
+      if (lineCount > 3) return false;
       if (body.startsWith(config.PREFIX)) return false;      // normal pipeline handles these
       if (settingsPlugin && settingsPlugin.isPending &&
           settingsPlugin.isPending(extra.sender)) return false;  // don't steal setting values
@@ -1603,11 +1607,41 @@ cmd({
   );
 });
 
+/* ── last resort — any short text the bot cannot understand → the guide ──
+ * Registered LAST (after papers + greetings), so it only fires when no
+ * other flow matched. Pending paper requests keep their silence rule. */
+const fallbackCmd = cmd({
+  noPrefixTriggers: true,
+  filter: (text, extra) => {
+    try {
+      if (!config.isEnabled('PAPERS_NO_PREFIX')) return false;
+      const mk = extra && extra.message;
+      if (!mk || mk.key?.fromMe) return false;
+      const jid = String(mk.key?.remoteJid || '');
+      if (!jid || jid.endsWith('@broadcast')) return false;
+      if (settingsPlugin && settingsPlugin.isPending &&
+          settingsPlugin.isPending(extra.sender)) return false;
+      const body = String(text || '').trim();
+      if (!body || body.startsWith(config.PREFIX)) return false;
+      if (body.length > 200 || /https?:\/\//i.test(body)) return false;
+      const lines = body.split('\n').filter((l) => l.trim());
+      if (lines.length > 3) return false;
+      // a pending paper request owns the turn: unmatched text stays silent
+      if (ivList(`${jid}:${extra.sender}`).length > 0) return false;
+      return true;
+    } catch (e) { return false; }
+  }
+}, async (sock, mek, m, ctx) => {
+  try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
+  return usageGuide(ctx);   // the guide — every time, never remembered
+});
+
 module.exports = {
   resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
     sendHubCard,
   buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
   __interviews: interviews,
+  __fallback: fallbackCmd,
   subjectsListMessage,
   __askMissing: askMissing,
   searchFiles: (index, query) => smart.searchIndex(index, query).items

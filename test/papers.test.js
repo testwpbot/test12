@@ -1130,8 +1130,9 @@ require('../plugins/greetings.js');
 
   /* 15z. greetings & mentions */
   const { replyHandlers: rh2 } = require('../command');
+  const greetExtra = { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } } };
   const greetH = rh2.filter((h) => h.noPrefixTriggers === true)
-    .find((h) => { try { return h.filter('hello', { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } } }) === true; } catch (e) { return false; } });
+    .find((h) => { try { return h.filter('hello', greetExtra) === true && h.filter('how are you', greetExtra) === false; } catch (e) { return false; } });
   ok(!!greetH, 'greeting handler registered');
   if (greetH) {
     const gf = (t, extra = {}) => greetH.filter(t, { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } }, ...extra });
@@ -1277,7 +1278,7 @@ require('../plugins/greetings.js');
   // module handle so handler + __interviews state share one instance
   const mmSender = '94779444401@s.whatsapp.net';
   const mmPapers = require('../plugins/papers');
-  const mmAdmits = (h) => { try { return h.filter('i want biology past paper', { sender: mmSender, message: { key: { fromMe: false, remoteJid: 'MM1@g.us' } } }) === true; } catch (e) { return false; } };
+  const mmAdmits = (h) => { try { return h.filter('i want biology past paper', { sender: mmSender, message: { key: { fromMe: false, remoteJid: 'MM1@g.us' } } }) === true && h.filter('how are you', { sender: mmSender, message: { key: { fromMe: false, remoteJid: 'MM1@g.us' } } }) === false; } catch (e) { return false; } };
   const mmNP = require('../command').replyHandlers.filter((h) => h.noPrefixTriggers === true && mmAdmits(h)).pop();
   const mmPpick = commands.filter((c) => c.pattern === 'ppick').pop();
   ok(!!mmNP, 'MM: papers no-prefix handler found');
@@ -1581,6 +1582,70 @@ require('../plugins/greetings.js');
     ok(nfMsg.includes('2016 - 2020') && !nfMsg.includes('2013') && !nfMsg.includes('2026'),
        'HY: live year range skips 2013/2026 too', nfMsg.slice(-260));
   }
+
+  /* 16aj. multi-line asks (up to 3 lines) + universal guide fallback */
+  guideGate.reset();
+  global.AI_INTERPRET = '';
+  smart.geminiReset();
+  const mlSender = '94779555511@s.whatsapp.net';
+  // use the LATEST papers instance (section 14 re-required the module):
+  // the handler that admits paper asks but declines random chat, paired
+  // with mmPapers so handler + state share one interviews map
+  const mlNP = require('../command').replyHandlers.filter((h) => h.noPrefixTriggers === true)
+    .filter((h) => {
+      try {
+        return h.filter('i want papers', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === true &&
+               h.filter('how are you', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false;
+      } catch (e) { return false; }
+    }).pop();
+  const mlSay = async (body) => {
+    sent = []; ffCard = null;
+    await mlNP.function(sock, mek, ffM, { from: 'ML@g.us', body, sender: mlSender, reply: async (t) => { sent.push({ reply: t }); } });
+    return { card: ffCard, text: sent.map((s) => s.reply).join(' ') };
+  };
+  ok(mlNP.filter('I need\n\nSft subject 2023 Tamil Medium past paper', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === true,
+     'ML: 2-line paper ask admitted');
+  ok(npFF.filter('a\nb\nc\nd', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false,
+     'ML: 4 lines rejected');
+  let r1 = await mlSay('I need\n\nChemistry subject 2020 Tamil Medium past paper');
+  ok(!!(r1.card || r1.text) || lastGiftText().includes('Paper/Scheme Not Found'),
+     'ML: 2-line ask gets a REAL reply (full details → direct result)', JSON.stringify({ card: !!(r1.card && r1.card.listTitle), text: r1.text.slice(0, 60), gift: lastGiftText().slice(0, 40) }));
+  // partial 2-line ask (no year) → interview continues from line 2
+  let r2 = await mlSay('I need\n\nchemistry past paper');
+  ok(r2.card && r2.card.listTitle === '🗓️ Pick a year…',
+     'ML: "I need / chemistry past paper" → year question (subject read from line 2)', r2.card && r2.card.listTitle);
+  ok(reacts().includes('📚'), 'ML: multi-line ack reacts 📚');
+
+  const fbHandler = mmPapers.__fallback;   // same instance as mlNP/mmPapers state
+  ok(!!fbHandler, 'FB: fallback handler registered');
+  const allNoPrefix = require('../command').replyHandlers.filter((h) => h.noPrefixTriggers === true);
+  ok(allNoPrefix.filter((h) => { try { return h.filter('hello', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === true && h.filter('how are you', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false; } catch (e) { return false; } }).length >= 1 &&
+     fbHandler !== allNoPrefix[0],
+     'FB: greeting + papers handlers registered ahead of the fallback (they own their asks first)');
+  ok(fbHandler.filter('https://example.com', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false &&
+     fbHandler.filter('a\nb\nc\nd', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false &&
+     fbHandler.filter('.menu', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false,
+     'FB: URLs, 4+ lines and commands never trigger the guide');
+  sent = [];
+  await fbHandler.function(sock, mek, ffM, { from: 'ML@g.us', body: 'hello there friend', sender: mlSender, reply: async (t) => { sent.push({ reply: t }); } });
+  ok(lastReply().includes('Getting your paper is easy') && lastReply().includes('almate.edu.lk'),
+     'FB: ununderstood text → the how-to-ask guide', lastReply().slice(0, 80));
+  ok(reacts().includes('📚'), 'FB: guide fallback reacts 📚');
+  // pending request keeps silence: fallback declines while an interview is
+  // open ('i want biology past paper' supersedes the ML chemistry interview
+  // and — subject-first — asks the YEAR)
+  await mlSay('i want biology past paper');
+  console.error('DBG-IVS after setup:', JSON.stringify({
+    card: ffCard && ffCard.listTitle,
+    ml: (mmPapers.__interviews['ML@g.us:' + mlSender] || []).map((s) => [s.id, s.subject, s.year]),
+    allKeys: Object.keys(mmPapers.__interviews)
+  }));
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'FB setup: biology interview open (year question after supersede)',
+     JSON.stringify({ card: ffCard && ffCard.listTitle }));
+
+  ok(fbHandler.filter('thanks bro', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false,
+     'FB: pending request + unmatched text → still total silence (interview owns the turn)',
+     JSON.stringify({ ivs: (mmPapers.__interviews['ML@g.us:' + mlSender] || []).map((s) => [s.id, s.subject, s.year]) }));
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
