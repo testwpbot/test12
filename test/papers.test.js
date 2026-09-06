@@ -1176,12 +1176,11 @@ require('../plugins/greetings.js');
        gc.buttons[2].id === '.ai' && gc.buttons[2].text.includes('🤖') &&
        gc.buttons[3].id === '.stream' && gc.buttons[3].text.includes('👥') && gc.buttons[3].text.includes('Join A/L Mate Group'),
        '4 buttons: emojis + Join A/L Mate Group label', JSON.stringify(gc.buttons));
-    ok((gc.footer || '').toLowerCase().includes('coming soon'), 'coming-soon note in the footer');
+    ok((gc.footer || '').toLowerCase().includes('almate.edu.lk'), 'welcome card footer = almate.edu.lk');
   }
   const papersModZ = require('../plugins/papers');
-  ok(papersModZ.buildGuide().includes('marking scheme') &&
-     !papersModZ.buildGuide().includes('fwc') && !/provincial/i.test(papersModZ.buildGuide()),
-     'buildGuide: marking scheme only — fwc/provincial fully removed');
+  ok(!papersModZ.buildGuide().includes('fwc') && !/provincial/i.test(papersModZ.buildGuide()),
+     'buildGuide: collections never mentioned');
   ok(papersModZ.buildShortGuide === undefined, 'buildShortGuide removed (greetings use the welcome card)');
 
   /* 15aa. memory — greetings per-WORD; generic guide asks NEVER remembered */
@@ -1197,8 +1196,9 @@ require('../plugins/greetings.js');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   const fullGuide = sent.map((s) => s.reply).join('');
-  ok(fullGuide.includes('Getting your paper is easy') && fullGuide.includes('Quick names') && fullGuide.includes('marking scheme') && !fullGuide.includes('fwc'),
-     'first "i want papers" → FULL exact how-to-ask guide (collections removed)');
+  ok(fullGuide.includes('Getting your paper is easy') && fullGuide.includes('📅 Year  📘 Subject  🌐 Medium') &&
+     fullGuide.includes('2016 chemistry sinhala medium') && fullGuide.includes('almate.edu.lk'),
+     'first "i want papers" → client\'s exact guide text (ends with almate.edu.lk)', fullGuide.slice(0, 220));
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   ok(sent.map((s) => s.reply).join('').includes('Getting your paper is easy'),

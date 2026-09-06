@@ -136,7 +136,7 @@ cmd({
     // options live ONLY on the buttons below — no text list (no duplication)
     const card =
       `${hello}\n\n` +
-      `🎓 Welcome to *Almate.edu.lk*\nhttps://almate.edu.lk\n\n` +
+      `🎓 Welcome to *Almate.edu.lk*\n\n` +
       `Your Smart A/L Learning AI Assistant 🇱🇰\n\n` +
       `How can I help you? 👇`;
     try {
@@ -144,7 +144,7 @@ cmd({
       // taps arrive as buttonsResponseMessage → body → normal command pipeline
       await sendButtons(sock, ctx.from, {
         text: card,
-        footer: '🚧 AI Assistant is coming soon!',
+        footer: 'almate.edu.lk',
         buttons: [
           { id: '.pp', text: '📚 Past Papers' },
           { id: '.ms', text: '📖 Marking Schemes' },
@@ -154,7 +154,7 @@ cmd({
       }, { quoted: mek });
     } catch (e) {
       // button send failed → plain-text fallback keeps the greeting alive
-      await ctx.reply(`${card}\n\n📚 *Past Papers* • 📖 *Marking Schemes*\n🤖 *AI Assistant* & 👥 *Stream Group* — coming soon!`);
+      await ctx.reply(`${card}\n\n📚 *Past Papers* • 📖 *Marking Schemes*\nalmate.edu.lk`);
     }
     guideGate.mark(ctx, fam);   // this greeting word (per-word memory)
   } catch (e) {
