@@ -555,6 +555,7 @@ function filterByType(index, files, type) {
 
 /** The "not found" reply with available-subjects hint (shared). */
 async function paperNotFound(ctx, index, q, degraded) {
+
   const subLabel = SUBJECTS[q.subject] ? SUBJECTS[q.subject].label : (q.subjectRaw || '');
   const medLabel = MEDIUMS[q.medium] ? MEDIUMS[q.medium].label : null;
   const catLabel = CATEGORIES[q.cat] && q.cat !== 'past' ? CATEGORIES[q.cat].label : null;
@@ -634,13 +635,15 @@ async function askMissing(sock, mek, m, ctx, st, index) {
 async function startOrContinuePaperRequest(sock, mek, m, ctx, q) {
   const sk = skey(ctx);
   pruneState();
-  const prev = interviews[sk] || {};
+  // FRESH state every time — a new request must never merge into an older
+  // pending interview (newest wins). Interview answers go through .ppick,
+  // which applies them to the existing state explicitly.
   const st = {
-    subject: q.subject || prev.subject || null,
-    year: Number.isFinite(q.year) && q.year ? q.year : (prev.year || null),
-    medium: q.medium || prev.medium || null,
-    type: q.type || prev.type || null,
-    cat: q.cat || prev.cat || null,
+    subject: q.subject || null,
+    year: Number.isFinite(q.year) && q.year ? q.year : null,
+    medium: q.medium || null,
+    type: q.type || null,
+    cat: q.cat || null,
     at: Date.now()
   };
   if (st.year && st.subject && st.medium) {
@@ -1175,9 +1178,17 @@ cmd({
       const sq = smart.parsePaperQuery(norm);
       if (sq && (sq.subject || sq.hasMediumNoun)) return true;
 
-      // pending paper interview — the student is answering our question
+      // pending paper interview — only a BARE ANSWER ("2020", "sinhala",
+      // "marking", "physics") is taken as the reply; greetings and other
+      // chat fall through to their own flows (greeting guide / silence)
       const ivKey = `${extra.message?.key?.remoteJid}:${extra.sender}`;
-      if (interviews[ivKey] && tokens.length <= 6) return true;
+      if (interviews[ivKey] && tokens.length <= 2) {
+        const d2 = dimsFromText(norm);
+        const dimCount = ['subject', 'medium', 'cat', 'type'].filter((k) => d2[k]).length +
+          (/^(19|20)\d{2}$/.test(tokens[0]) ? 1 : 0);
+        if (dimCount >= 1) return true;
+        if (['cancel', 'stop', 'exit', 'epa', 'nathi'].includes(tokens[0])) return true;
+      }
 
       // FREE-FORM: any short message mentioning papers ("i want 2020 A/L
       // chemistry past paper") or a year + subject ("2019 chemistry") goes
@@ -1268,18 +1279,49 @@ cmd({
       return usageGuide(ctx);
     }
 
-    // pending interview — the message is (probably) an ANSWER to our question
+    // pending interview — decide: ANSWER the question, or SUPERSEDE with a
+    // new request? (a new paper request must never be merged into the old one)
     const skIv = skey(ctx);
     if (interviews[skIv]) {
+      const iv = interviews[skIv];
       const ans = parseInterviewAnswer(body);
+      const nowParsed = parsePaperQuery(body);
+      const nowDims = dimsFromText(body);
+      const nowTokens = body.split(/\s+/).filter(Boolean);
+
+      // complete new request → NEWEST WINS (drop the old interview entirely)
+      const completeNew = (nowParsed && nowParsed.year && (nowParsed.subject || nowParsed.medium)) ||
+        (nowDims.subject && nowDims.year);
+      if (completeNew) {
+        delete interviews[skIv];
+        return startOrContinuePaperRequest(sock, mek, m, ctx, nowParsed || nowDims);
+      }
       if (ans && ans.cancel) {
         delete interviews[skIv];
         return ctx.reply('👌 Cancelled — send *papers* whenever you need 📚');
       }
-      if (ans && ans.field) {
-        return ppickCommand.function(sock, mek, m, pass({ args: [ans.field, String(ans.value)] }));
+      // which field is the pending question actually asking for?
+      const expectedField = !iv.year ? 'year' : (!iv.subject ? 'subject' : 'medium');
+      const dimsPresent = ['subject', 'year', 'medium', 'type', 'cat'].filter((k) => nowDims[k]);
+      const bare = nowTokens.length <= 2 && dimsPresent.length >= 1 && dimsPresent.length <= 2;
+      const answersPending = bare && (dimsPresent.includes(expectedField) ||
+        dimsPresent.every((d) => d === 'type' || d === 'cat'));
+      if (answersPending) {
+        // ambiguous words ('sinhala' = subject AND medium) resolve to the
+        // field the pending question is actually asking about
+        const field = dimsPresent.includes(expectedField) ? expectedField
+          : dimsPresent.find((d) => d === 'type' || d === 'cat');
+        return ppickCommand.function(sock, mek, m, pass({ args: [field, String(nowDims[field])] }));
       }
-      // not an answer — keep the interview and continue below
+      // a NEW partial paper ask ("i want physics papers now") → supersede:
+      // fresh interview on the new topic — never merged with the old one
+      if (nowDims.subject || nowDims.year) {
+        delete interviews[skIv];
+        return startOrContinuePaperRequest(sock, mek, m, ctx, nowDims);
+      }
+      // anything else while an interview is pending: fall through SILENTLY —
+      // no react, no AI, no guide. The interview stays alive for 30 min.
+      return;
     }
 
     // STRUCTURED request → "2016 chemistry sinhala medium" (missing details
@@ -1324,7 +1366,7 @@ cmd({
     // nothing usable at all → teach the format
     return usageGuide(ctx);
   } catch (e) {
-    console.error('papers no-prefix handler error:', e.message || e);
+      console.error('papers no-prefix handler error:', e.message || e);
     try {
       return await ctx.reply(`❌ ${gdrive.friendlyError(e)}`);
     } catch (e2) {

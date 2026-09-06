@@ -1154,6 +1154,49 @@ require('../plugins/greetings.js');
      'GUIDE_GAP_HOURS setting validates 0-72 hours');
   guideGate.reset();
 
+  /* 15ab. state conflicts — the approved priority rules */
+  guideGate.reset();
+  // A: interview pending + 'hello' → papers stays SILENT (no 📚 react);
+  //    the greeting handler owns it, and the interview stays alive
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'CF1@g.us', body: 'i want biology past paper', sender: '94779222201@s.whatsapp.net', reply: async () => {} });
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'CF: biology interview opened (year question)', ffCard && ffCard.listTitle);
+  ok(npFF.filter('hello', { sender: '94779222201@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'CF1@g.us' } } }) === false,
+     "CF: 'hello' with pending interview → papers filter declines (no react spam)");
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'CF1@g.us', body: '2016', sender: '94779222201@s.whatsapp.net', reply: async () => {} });
+  ok(ffCard && ffCard.listTitle === '🌐 Pick a medium…', 'CF: interview survived the greeting — year answer still works', ffCard && ffCard.listTitle);
+
+  // B: interview pending + COMPLETE new request → newest wins (no merge)
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'CF2@g.us', body: 'i want biology past paper', sender: '94779222202@s.whatsapp.net', reply: async () => {} });
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'CF2: interview opened');
+  await npFF.function(sock, mek, ffM, { from: 'CF2@g.us', body: '2020 chemistry sinhala', sender: '94779222202@s.whatsapp.net', reply: async () => {} });
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('2020_Chemistry_Sinhala_Medium.pdf'),
+     'CF: new complete request supersedes the pending biology interview', JSON.stringify(ffCard && ffCard.sections));
+
+  // C: year question pending + bare other subject ('physics') → supersede fresh
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'CF3@g.us', body: 'i want biology past paper', sender: '94779222203@s.whatsapp.net', reply: async () => {} });
+  await npFF.function(sock, mek, ffM, { from: 'CF3@g.us', body: 'physics', sender: '94779222203@s.whatsapp.net', reply: async () => {} });
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…' &&
+     ffCard.sections[0].rows.some((r) => r.title === '📅 2021'),
+     "CF: 'physics' mid-biology-interview → fresh PHYSICS interview (not merged)", JSON.stringify(ffCard && ffCard.sections));
+
+  // D: partial new ask inside a sentence supersedes too
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'CF4@g.us', body: 'i want biology past paper', sender: '94779222204@s.whatsapp.net', reply: async () => {} });
+  await npFF.function(sock, mek, ffM, { from: 'CF4@g.us', body: 'actually i want physics papers now', sender: '94779222204@s.whatsapp.net', reply: async () => {} });
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…',
+     "CF: 'i want physics papers now' supersedes with a fresh interview", ffCard && ffCard.listTitle);
+
+  // E: random chat with interview pending → papers handler never engages
+  ffCard = null;
+  await npFF.function(sock, mek, ffM, { from: 'CF5@g.us', body: 'i want biology past paper', sender: '94779222205@s.whatsapp.net', reply: async () => {} });
+  ok(npFF.filter('thanks bro', { sender: '94779222205@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'CF5@g.us' } } }) === false,
+     "CF: 'thanks bro' → papers filter declines (handler never runs, zero sends)");
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
