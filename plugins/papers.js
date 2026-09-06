@@ -580,7 +580,7 @@ function filterByType(index, files, type) {
 }
 
 /** The "not found" reply with available-subjects hint (shared). */
-async function paperNotFound(sock, mek, ctx, index, q, degraded) {
+async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
   // LIVE library facts — never hardcoded lists
   const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
   const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
@@ -595,6 +595,7 @@ async function paperNotFound(sock, mek, ctx, index, q, degraded) {
       `📚 ${nSubs} A/L Subjects\n\n` +
       `> To view available subject names: tap the button below 👇`;
   }
+  if (kindHint) msg += `\n\n${kindHint}`;
   msg += '\n\nPlease check your:\n* Year\n* Language Medium\n* Subject\n\nand try again. ➡️';
   if (years.length) msg += `\n\n📌 ${years[years.length - 1] + 1} Papers are currently being prepared....`;
   if (degraded) msg += '\n⚠️ _Saved copy shown — Drive unreachable right now._';
@@ -891,7 +892,9 @@ async function directPaperRequest(sock, mek, m, ctx, q) {
       matches.length === 1 ? '📥 Download…' : '📥 Pick a paper…');
   }
 
-  // the requested KIND is missing — tell the student what exists instead
+  // the requested KIND is missing (marking asked, question paper exists…)
+  // → the SAME standard not-found card, plus what DOES exist for the combo
+  // (never silently serve another kind)
   if (q.type) {
     const all = matchPaper(index, q);
     const cls = classifyAll(index);
@@ -903,15 +906,8 @@ async function directPaperRequest(sock, mek, m, ctx, q) {
       hasMcq && 'MCQ',
       hasMarking && 'marking scheme'
     ].filter(Boolean);
-    const kindName = { marking: 'Marking scheme', mcq: 'MCQ paper', essay: 'Essay paper', paper: 'Question paper' }[q.type] || 'That kind';
-    return ctx.reply(
-      `❌ *${kindName} not found:* ${label}\n` +
-      (avail.length
-        ? `📚 For *${label}* we have: ${avail.join(', ')}\n`
-        : `That combination isn't in the library yet.\n`) +
-      `💡 Or send *papers* to browse 📂` +
-      (degraded ? '\n⚠️ _Saved copy shown — Drive unreachable right now._' : '')
-    );
+    const kindHint = avail.length ? `📚 For *${label}* we have: ${avail.join(', ')}` : null;
+    return paperNotFound(sock, mek, ctx, index, q, degraded, kindHint);
   }
   return paperNotFound(sock, mek, ctx, index, q, degraded);
 }

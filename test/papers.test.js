@@ -610,8 +610,10 @@ const ok = (cond, name, extra) => {
   sent = [];
   ffCard = null;
   await npFF.function(sock, mek, ffM, { from: 'FT1@g.us', body: 'i want chemistry marking scheme', sender: '94778222221@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(!ffCard && lastGiftText().includes('Paper/Scheme Not Found'),
-     'marking requested, none exists → clean not-found card (never the paper)', lastGiftText().slice(0, 120));
+  ok(!ffCard && lastGiftText().includes('Paper/Scheme Not Found') && lastGiftText().includes('question paper'),
+     'marking requested, none exists → standard not-found card + "we have: question paper" hint (never the paper)', lastGiftText().slice(0, 200));
+  ok(lastGiftButtons().some((b) => b.id === '.subjects'),
+     'kind-miss card also carries the Available Subjects button');
   // marking exists → ONLY the marking file
   global.AI_INTERPRET = '{"action":"find","year":2016,"subject":"biology","medium":"sinhala","type":"marking"}';
   sent = [];
