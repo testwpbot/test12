@@ -117,7 +117,10 @@ Module._load = function (request) {
     };
   }
   if (request === 'gifted-btns') {
-    return { sendButtons: async () => {}, sendInteractiveMessage: async () => {} };
+    return {
+      sendButtons: async (s, jid, payload) => { (global.__giftedCalls = global.__giftedCalls || []).push({ jid, payload }); },
+      sendInteractiveMessage: async () => {}
+    };
   }
   if (request === 'form-data') {
     return class FormData {};
@@ -621,7 +624,9 @@ const ok = (cond, name, extra) => {
      'classifier: Uthara_Pathra file recognized as marking');
   ok(PS15x.classifyFileName('2020 Phy Marking Scheme English.pdf').extra.some((w) => TYPE_WORDS_MS.has(w)),
      'classifier: Marking Scheme file recognized');
-  ok(PS15x.parsePaperQuery('2019 provencial bio sinhala')?.cat === 'provincial', "typo: 'provencial' → provincial");
+  ok(PS15x.parsePaperQuery('2019 provencial bio sinhala')?.cat === null &&
+     PS15x.parsePaperQuery('2019 provencial bio sinhala')?.subject === 'biology',
+     "typo 'provencial' ignored (collections removed) — subject still parsed");
   // path-based marking folder
   const mkIdx = { root: { name: 'X' }, folders: [], files: [
     { name: 'Biology.pdf', isFolder: false, path: ['X', 'Marking Schemes', '2019'] }
@@ -629,7 +634,7 @@ const ok = (cond, name, extra) => {
   const mkCls = [...PS15x.classifyAll(mkIdx).values()][0];
   ok(mkCls.typeKind === 'marking', 'path: file in "Marking Schemes/" folder counts as marking', JSON.stringify(mkCls));
 
-  /* 15w. collections — past / FWC / provincial — any language */
+  /* 15w. collections — plain A/L papers only (FWC/Provincial removed from Drive) */
   const PS = require('../lib/papersearch');
   const catIdx = { root: { name: 'X' }, folders: [], files: [
     { name: '2019_Biology_Sinhala.pdf', isFolder: false, path: ['X', '2019'] },
@@ -637,19 +642,17 @@ const ok = (cond, name, extra) => {
     { name: '2019_Biology_Provincial_Sinhala.pdf', isFolder: false, path: ['X', 'Provincial'] }
   ] };
   ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala' }).length === 3,
-     'no category asked → all collections offered');
-  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'fwc' }).length === 1 &&
-     PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'fwc' })[0].name.includes('FWC'),
-     "cat 'fwc' → only the FWC file");
-  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'provincial' })[0].name.includes('Provincial'),
-     "cat 'provincial' → only the provincial file");
-  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'past' })[0].name === '2019_Biology_Sinhala.pdf',
-     "cat 'past' → the plain paper (unmarked = past)");
+     'all files served as plain past papers (no collection split)');
+  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'fwc' }).length === 3 &&
+     PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'provincial' }).length === 3,
+     "unknown collections ('fwc'/'provincial') are IGNORED — files still served (no dead end)");
+  ok(PS.matchPaper(catIdx, { year: 2019, subject: 'biology', medium: 'sinhala', cat: 'past' }).length === 3,
+     "cat 'past' → every file (unmarked = past)");
   const pqFwc = PS.parsePaperQuery('fwc 2019 bio sinhala');
-  ok(pqFwc && pqFwc.cat === 'fwc' && pqFwc.subject === 'biology', 'parse: fwc category extracted');
+  ok(pqFwc && pqFwc.cat === null && pqFwc.subject === 'biology', "parse: 'fwc' ignored, subject still parsed");
   const pqPalath = PS.parsePaperQuery('2019 පළාත් ජීව විද්‍යාව sinhala');
-  ok(pqPalath && pqPalath.cat === 'provincial' && pqPalath.subject === 'biology',
-     'parse: පළාත් → provincial (Sinhala)');
+  ok(pqPalath && pqPalath.cat === null && pqPalath.subject === 'biology',
+     'parse: පළාත් ignored (Sinhala) — subject parsed');
   const sinFile = PS.classifyFileName('2019 රසායන විද්‍යාව සිංහල.pdf');
   ok(sinFile.subject === 'chemistry' && sinFile.medium === 'sinhala',
      'classifier: Sinhala-named file fully understood');
@@ -1116,51 +1119,62 @@ require('../plugins/greetings.js');
         contextInfo: { mentionedJid: ['94700000000@s.whatsapp.net'] } } } };
     ok(gf('@someone what time is it', { message: mekOther }) === false,
        'mention: other people + non-greeting ignored');
-    // e2e: greeting reply carries the guide
+    // e2e: greeting = Almate welcome card with 4 attached buttons + name
+    global.__giftedCalls = [];
     sent = [];
     lastCard = null;
-    await greetH.function(sock, mek, mCard, { from: 'GR@g.us', body: 'hello', pushname: 'Kasun', reply: async (t) => { sent.push({ reply: t }); } });
-    const g = sent.map((s) => s.reply).join('\n');
-    ok(g.includes('Hello') && g.includes('E.g.') && g.includes('2016 chemistry sinhala medium') &&
-       !g.includes('How to ask') && !g.includes('Short terms'),
-       'greeting reply = warm hello + ONE-line example (short guide)', g.slice(0, 140));
+    await greetH.function(sock, { key: mek.key, pushName: 'Kasun' }, mCard, { from: 'GR@g.us', body: 'hello', pushname: 'Kasun', reply: async (t) => { sent.push({ reply: t }); } });
+    const gc = ((global.__giftedCalls || []).at(-1) || {}).payload || {};
+    ok(gc.text && gc.text.includes('Hello *Kasun*') && gc.text.includes('Welcome to *Almate.edu.lk*') &&
+       gc.text.includes('How can I help you?') && gc.text.includes('1️⃣ A/L Past Papers') &&
+       gc.text.includes('4️⃣ Join A/L Stream Group'),
+       'greeting = Almate welcome card mentioning the student by name', (gc.text || '').slice(0, 140));
+    ok(Array.isArray(gc.buttons) && gc.buttons.length === 4 &&
+       gc.buttons[0].id === '.papers' && gc.buttons[1].id === '.ms' &&
+       gc.buttons[2].id === '.ai' && gc.buttons[3].id === '.stream',
+       'welcome card carries the 4 attached tap buttons', JSON.stringify(gc.buttons));
+    ok((gc.footer || '').toLowerCase().includes('coming soon'), 'options 3 & 4 flagged coming soon');
   }
   const papersModZ = require('../plugins/papers');
-  ok(papersModZ.buildGuide().includes('fwc') && papersModZ.buildGuide().includes('marking scheme'),
-     'buildGuide includes collections');
-  ok(papersModZ.buildShortGuide().includes('2016 chemistry sinhala medium') &&
-     !papersModZ.buildShortGuide().includes('How to ask') && !papersModZ.buildShortGuide().includes('fwc'),
-     'buildShortGuide = one example line only');
-  ok(papersModZ.buildGuide().length > papersModZ.buildShortGuide().length * 3,
-     'full guide is much longer than the greeting example line');
+  ok(papersModZ.buildGuide().includes('marking scheme') &&
+     !papersModZ.buildGuide().includes('fwc') && !/provincial/i.test(papersModZ.buildGuide()),
+     'buildGuide: marking scheme only — fwc/provincial fully removed');
+  ok(papersModZ.buildShortGuide === undefined, 'buildShortGuide removed (greetings use the welcome card)');
 
-  /* 15aa. guide/greeting anti-spam memory (GUIDE_GAP_HOURS) */
+  /* 15aa. memory — greetings per-WORD; generic guide asks NEVER remembered */
   const guideGate = require('../lib/guidegate');
   guideGate.reset();   // default GUIDE_GAP_HOURS = 6 is already active
+  const greetCapture = async (body, from, snd) => {
+    global.__giftedCalls = [];
+    sent = [];
+    await greetH.function(sock, mek, mCard, { from, body, sender: snd, reply: async (t) => { sent.push({ reply: t }); } });
+    const gc = ((global.__giftedCalls || []).at(-1) || {}).payload || {};
+    return ((gc.text || '') + '\n' + sent.map((s) => s.reply).join('\n')).trim();
+  };
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   const fullGuide = sent.map((s) => s.reply).join('');
-  ok(fullGuide.includes('How to ask') && fullGuide.includes('Short terms') && fullGuide.includes('fwc'),
-     'first "i want papers" → FULL exact how-to-ask guide (not the short one)');
+  ok(fullGuide.includes('How to ask') && fullGuide.includes('Short terms') && fullGuide.includes('marking scheme') && !fullGuide.includes('fwc'),
+     'first "i want papers" → FULL exact how-to-ask guide (collections removed)');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.length === 0, 'repeat within the gap → silent (no spam)', JSON.stringify(sent));
-  sent = [];
-  await greetH.function(sock, mek, mCard, { from: 'SP1@g.us', body: 'hello', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('Hello'), 'greeting after a full guide still greets (per-word memory)');
-  sent = [];
-  await greetH.function(sock, mek, mCard, { from: 'SP1@g.us', body: 'hello', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.length === 0, 'same greeting word twice in the window → second silent');
+  ok(sent.map((s) => s.reply).join('').includes('How to ask'),
+     'repeat "i want papers" → guide sent AGAIN (generic asks are never remembered)');
+  ok((await greetCapture('hello', 'SP1@g.us', '94779111101@s.whatsapp.net')).includes('Hello'),
+     'greeting still works after guide asks (per-word memory only)');
+  ok((await greetCapture('hello', 'SP1@g.us', '94779111101@s.whatsapp.net')) === '',
+     'same greeting word twice in the window → second silent');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.length === 0, 'full guide stays suppressed after a greeting (shared protection)');
+  ok(sent.map((s) => s.reply).join('').includes('How to ask'),
+     'guide NEVER suppressed — even right after a greeting');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111102@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'a different student still gets the guide');
   config.set('GUIDE_GAP_HOURS', '0');
-  sent = [];
-  await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'gap 0 = memory off, always replies');
+  ok((await greetCapture('hello', 'SPG@g.us', '94779111103@s.whatsapp.net')).includes('Hello') &&
+     (await greetCapture('hello', 'SPG@g.us', '94779111103@s.whatsapp.net')).includes('Hello'),
+     'gap 0 = greeting memory off, every hello replies');
   config.set('GUIDE_GAP_HOURS', '6');
   ok(config.SETTINGS_META.GUIDE_GAP_HOURS.validate('24') === true &&
      config.SETTINGS_META.GUIDE_GAP_HOURS.validate('0') === true &&
@@ -1286,11 +1300,7 @@ require('../plugins/greetings.js');
 
   /* 16aa. per-greeting-word memory — "hello" once, "hi" greets again */
   guideGate.reset();
-  const pwSay = async (body, snd) => {
-    sent = [];
-    await greetH.function(sock, mek, mCard, { from: 'PW@g.us', body, sender: snd || '94779555501@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-    return sent.map((s) => s.reply).join('');
-  };
+  const pwSay = async (body, snd) => greetCapture(body, 'PW@g.us', snd || '94779555501@s.whatsapp.net');
   ok((await pwSay('hello')).includes('Hello'), 'PW: hello → greeting sent');
   ok((await pwSay('hello')) === '', 'PW: second hello → silent');
   ok((await pwSay('hi')).includes('Hello'), "PW: 'hi' greets again (different word)", 'hi silent!');
@@ -1305,15 +1315,47 @@ require('../plugins/greetings.js');
   /* 16ab. 📚 react consistency — anything that replies ALWAYS reacts (groups + inbox) */
   guideGate.reset();
   const rcSender = '94779555503@s.whatsapp.net';
-  await greetH.function(sock, mek, mCard, { from: 'RC@g.us', body: 'hello', sender: rcSender, reply: async () => {} });   // fills the shared anti-spam window
+  await greetCapture('hello', 'RC@g.us', rcSender);   // greeting first — must not affect the papers flow
   ffCard = null;
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'RC@g.us', body: 'papers', sender: rcSender, reply: async () => {} });
-  ok(reacts().includes('📚'), "'papers' reacts 📚 even inside the anti-spam window (menu always replies → always ack)", JSON.stringify(reacts()));
+  ok(reacts().includes('📚'), "'papers' reacts 📚 in groups AND inbox (always ack a reply)", JSON.stringify(reacts()));
   ok(!!ffCard, "'papers' still opens the fresh main menu");
   sent = [];
-  await npFF.function(sock, mek, ffM, { from: 'RC@g.us', body: 'i want papers', sender: rcSender, reply: async () => {} });
-  ok(sent.length === 0, 'silent repeat guide-ask: no reply AND no react (consistent silence)', JSON.stringify(sent));
+  await npFF.function(sock, mek, ffM, { from: 'RC@g.us', body: 'i want papers', sender: rcSender, reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.map((s) => s.reply).join('').includes('How to ask') && reacts().includes('📚'),
+     'repeat guide-ask → guide AGAIN + 📚 react (never remembered, always acked)', JSON.stringify({ r: sent.map((s) => String(s.reply).slice(0, 40)), x: reacts() }));
+
+  /* 16ac. exact generic asks never remembered + welcome-card tap commands */
+  guideGate.reset();
+  global.AI_INTERPRET = '';
+  smart.geminiReset();
+  const gaSender = '94779555504@s.whatsapp.net';
+  for (const t of ['i want a past paper', 'i want paper', 'i want AL papers']) {
+    sent = [];
+    await npFF.function(sock, mek, ffM, { from: 'GA@g.us', body: t, sender: gaSender, reply: async (x) => { sent.push({ reply: x }); } });
+    const g1 = sent.map((s) => s.reply).join('');
+    sent = [];
+    await npFF.function(sock, mek, ffM, { from: 'GA@g.us', body: t, sender: gaSender, reply: async (x) => { sent.push({ reply: x }); } });
+    const g2 = sent.map((s) => s.reply).join('');
+    ok(g1.includes('How to ask') && g2.includes('How to ask'),
+       `"${t}" → full guide BOTH times (never remembered)`, JSON.stringify({ g1: g1.slice(0, 60), g2: g2.slice(0, 60) }));
+  }
+  const msCmd = commands.filter((c) => c.pattern === 'ms').pop();
+  const aiCmd = commands.filter((c) => c.pattern === 'ai').pop();
+  const stCmd = commands.filter((c) => c.pattern === 'stream').pop();
+  ok(!!msCmd && !!aiCmd && !!stCmd, '.ms / .ai / .stream commands registered for the welcome-card buttons');
+  ffCard = null;
+  await msCmd.function(sock, mek, ffM, ctx({ from: 'GA@g.us', args: [], sender: gaSender }));
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'tap 2 (Marking Schemes) → marking-scheme interview opens (year question)', ffCard && ffCard.listTitle);
+  const gaIv = (mmPapers.__interviews['GA@g.us:' + gaSender] || [])[0];
+  ok(gaIv && gaIv.type === 'marking', 'marking type remembered in the interview state');
+  sent = [];
+  await aiCmd.function(sock, mek, {}, ctx({ from: 'GA@g.us', sender: gaSender }));
+  ok(lastReply().includes('COMING SOON'), 'tap 3 (AI Assistant) → coming-soon message', lastReply().slice(0, 60));
+  sent = [];
+  await stCmd.function(sock, mek, {}, ctx({ from: 'GA@g.us', sender: gaSender }));
+  ok(lastReply().includes('COMING SOON'), 'tap 4 (Stream Group) → coming-soon message', lastReply().slice(0, 60));
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

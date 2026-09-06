@@ -6,7 +6,7 @@
  * ─────────────────────────────────────────────────────────────────────── */
 const { cmd } = require('../command');
 const config = require('../config');
-const { buildShortGuide } = require('./papers');
+const { sendButtons } = require('../lib/buttons');
 const guideGate = require('../lib/guidegate');
 
 let settingsPlugin = null;
@@ -132,15 +132,54 @@ cmd({
     const fam = greetFamilyOf(String(ctx.body || ''));
     if (guideGate.recent(ctx, fam)) return;
     const name = String(mek.pushName || '').split(/\s+/)[0];
-    const hello = name ? `👋 *Hello, ${name}!*` : '👋 *Hello!*';
-    await ctx.reply(
-      `${hello} I'm *${config.BOT_NAME}* 🤖\n` +
-      `I send A/L *past papers, FWC, provincial papers & marking schemes* 📚\n\n` +
-      buildShortGuide()
-    );
-    guideGate.mark(ctx, fam);   // this greeting word
-    guideGate.mark(ctx);        // shared slot: the full guide stays quiet after any greeting
+    const hello = name ? `👋 Hello *${name}*!` : '👋 Hello!';
+    const card =
+      `${hello}\n\n` +
+      `🎓 Welcome to *Almate.edu.lk*\nhttps://almate.edu.lk\n\n` +
+      `Your Smart A/L Learning AI Assistant 🇱🇰\n\n` +
+      `How can I help you?\n\n` +
+      `1️⃣ A/L Past Papers\n` +
+      `2️⃣ A/L Marking Schemes\n` +
+      `3️⃣ Almate AI Assistant 🤖\n` +
+      `4️⃣ Join A/L Stream Group`;
+    try {
+      // quick-reply buttons attached to the message (NOT a menu dropdown);
+      // taps arrive as buttonsResponseMessage → body → normal command pipeline
+      await sendButtons(sock, ctx.from, {
+        text: card,
+        footer: '🚧 Options 3 & 4 are coming soon!',
+        buttons: [
+          { id: '.papers', text: '1️⃣ Past Papers' },
+          { id: '.ms', text: '2️⃣ Marking Schemes' },
+          { id: '.ai', text: '3️⃣ AI Assistant' },
+          { id: '.stream', text: '4️⃣ Stream Group' }
+        ]
+      }, { quoted: mek });
+    } catch (e) {
+      // button send failed → plain-text fallback keeps the greeting alive
+      await ctx.reply(`${card}\n\n🚧 Options 3 & 4 are coming soon!`);
+    }
+    guideGate.mark(ctx, fam);   // this greeting word (per-word memory)
   } catch (e) {
     console.error('greeting reply error:', (e && e.message) || e);
   }
+});
+
+/* ── welcome-card placeholders — options 3 & 4 are COMING SOON ────────── */
+cmd({
+  pattern: 'ai',
+  desc: 'Almate AI Assistant (coming soon)',
+  category: 'main',
+  filename: __filename
+}, async (sock, mek, m, ctx) => {
+  return ctx.reply('🤖 *Almate AI Assistant* is COMING SOON! 🚧\nI will answer your A/L questions here — stay tuned!');
+});
+
+cmd({
+  pattern: 'stream',
+  desc: 'Join A/L Stream Group (coming soon)',
+  category: 'main',
+  filename: __filename
+}, async (sock, mek, m, ctx) => {
+  return ctx.reply('👥 *A/L Stream Group* is COMING SOON! 🚧\nThe invite link will be shared here — stay tuned!');
 });

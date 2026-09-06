@@ -20,7 +20,6 @@ const config = require('../config');
 const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
 const { isTapResponse } = require('../lib/msg');
-const guideGate = require('../lib/guidegate');
 const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS, CATEGORIES, TYPE_WORDS, classifyFileName, subjectFromTokens, classifyAll } = require('../lib/papersearch');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
@@ -765,18 +764,13 @@ function buildGuide() {
     `Example: *2016 chemistry sinhala medium*\n\n` +
     `🔤 Short terms: ${shorts}\n` +
     `🌐 Mediums: sinhala • english • tamil\n` +
-    `📦 Also: *fwc* • *provincial* • *marking scheme / answer sheet*\n\n` +
+    `📦 Also: *marking scheme / answer sheet*\n\n` +
     `📚 Or send *papers* to browse the full menu (${words.length} subjects)`
   );
 }
-/** One-line version for greetings — a single example only. */
-function buildShortGuide() {
-  return `💡 E.g. *2016 chemistry sinhala medium* — or just send *papers* 📚`;
-}
 function usageGuide(ctx) {
-  // anti-spam: one guide per student per gap (default 6h, GUIDE_GAP_HOURS)
-  if (guideGate.recent(ctx)) return;
-  guideGate.mark(ctx);
+  // generic asks ("i want papers" / "i want a past paper") are NEVER
+  // remembered — every send gets the full exact how-to-ask guide again
   return ctx.reply(buildGuide());
 }
 
@@ -957,7 +951,7 @@ const papersCommand = cmd({
     if (dimsQ.subject && !(dimsQ.year && dimsQ.medium)) {
       return startOrContinuePaperRequest(sock, mek, m, ctx, dimsQ);
     }
-    // explicit collection without full details ("papers fwc") → interview
+    // explicit type without full details ("papers marking scheme") → interview
     if (dimsQ.cat && !dimsQ.year) {
       return startOrContinuePaperRequest(sock, mek, m, ctx, dimsQ);
     }
@@ -1135,6 +1129,17 @@ const paperCommand = cmd({
   }
 });
 
+/* ── .ms — start a MARKING SCHEME request (welcome-card button) ───────── */
+cmd({
+  pattern: 'ms',
+  react: '📖',
+  desc: 'Ask for a marking scheme / answer sheet',
+  category: 'main',
+  filename: __filename
+}, async (sock, mek, m, ctx) => {
+  return startOrContinuePaperRequest(sock, mek, m, ctx, { type: 'marking', cat: 'past' });
+});
+
 /* ── .ppick — tap answers for paper questions (year/medium/subject) ──── */
 const ppickCommand = cmd({
   pattern: 'ppick',
@@ -1294,21 +1299,9 @@ cmd({
     const earlyBody = String(ctx.body || '');
     const earlyDims = dimsFromText(earlyBody);
     const earlyParsed = parsePaperQuery(earlyBody);
-    // 📚 react = "seen" ack. It must ALWAYS appear when the bot is about to
-    // reply — groups included (a reply without the react looks broken).
-    // Skip it ONLY for a fully-silent repeat guide-ask (no reply either).
-    const earlyNorm = String(ctx.body || '').toLowerCase().replace(/\u200D/g, '')
-      .replace(/[^\p{L}\p{M}\p{N}\s/]+/gu, ' ').replace(/\s+/g, ' ').trim();
-    const earlyToks = earlyNorm.split(' ').filter(Boolean);
-    const hubAsk = ['papers', 'pastpapers', 'pastpaper', 'alpastpapers', 'alpapers']
-      .includes(earlyNorm.replace(/\s+/g, '')) ||
-      earlyToks[0] === 'papers' || earlyToks[0] === 'paper';
-    const guideCandidate = ivList(skey(ctx)).length === 0 &&
-      !(earlyParsed && earlyParsed.year && (earlyParsed.subject || earlyParsed.medium)) &&
-      !earlyDims.subject && !earlyDims.year;
-    if (hubAsk || !guideCandidate || !guideGate.recent(ctx)) {
-      try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
-    }
+    // 📚 react = "seen" ack — ALWAYS, groups + inbox. The filter only admits
+    // messages the bot will answer, so every handler run reacts.
+    try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
 
     const body = String(ctx.body || '').toLowerCase().replace(/\u200D/g, '')
       .replace(/[^\p{L}\p{M}\p{N}\s/]+/gu, ' ')
@@ -1468,7 +1461,7 @@ cmd({
 module.exports = {
   resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
     sendHubCard,
-  buildGuide, buildShortGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
+  buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
   __interviews: interviews,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
 };
