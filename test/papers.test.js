@@ -1359,6 +1359,51 @@ require('../plugins/greetings.js');
   await stCmd.function(sock, mek, {}, ctx({ from: 'GA@g.us', sender: gaSender }));
   ok(lastReply().includes('COMING SOON'), 'tap 4 (Stream Group) → coming-soon message', lastReply().slice(0, 60));
 
+  /* 16ad. local knowledge base — conversational asks never meet silence */
+  guideGate.reset();
+  global.AI_INTERPRET = '';
+  smart.geminiReset();
+  const kbSender = '94779555505@s.whatsapp.net';
+  const kbSay = async (body) => {
+    sent = []; ffCard = null;
+    await npFF.function(sock, mek, ffM, { from: 'KB@g.us', body, sender: kbSender, reply: async (t) => { sent.push({ reply: t }); } });
+    return sent.map((s) => s.reply).join(' ');
+  };
+  ok(npFF.filter('you have it?', { sender: kbSender, message: { key: { fromMe: false, remoteJid: 'KB@g.us' } } }) === true,
+     "KB filter: 'you have it?' admitted");
+  ok(npFF.filter('how are you', { sender: kbSender, message: { key: { fromMe: false, remoteJid: 'KB@g.us' } } }) === false,
+     "KB filter: 'how are you' still ignored");
+  ok(npFF.filter('have you eaten?', { sender: kbSender, message: { key: { fromMe: false, remoteJid: 'KB@g.us' } } }) === false,
+     "KB filter: 'have you eaten?' not a paper ask");
+  r = await kbSay('you have it?');
+  ok(r.includes('Yes') && r.includes('past papers') && r.includes('marking schemes') && !/\bAI\b/.test(r),
+     "KB: 'you have it?' → natural availability answer (no AI branding)", r.slice(0, 90));
+  ok(reacts().includes('📚'), "KB: availability answer still reacts 📚");
+  r = await kbSay('do you have marking schemes?');
+  ok(r.includes('Yes') && r.includes('marking schemes'), "KB: 'do you have marking schemes?' → availability");
+  r = await kbSay('i need papers?');
+  ok(r.includes('How to ask') && r.includes('2016 chemistry sinhala medium'),
+     "KB: 'i need papers?' → full how-to-ask guide (every time)");
+  const again = await kbSay('i need papers?');
+  ok(again.includes('How to ask'), "KB: 'i need papers?' again → guide AGAIN (never remembered)");
+  r = await kbSay('paper thiyenawada?');
+  ok(r.includes('Yes'), "KB: Sinhala 'paper thiyenawada?' → availability");
+  r = await kbSay('ඕන් පත්තරයෙක්');
+  ok(r.includes('How to ask'), "KB: 'ඕන් පත්තරයෙක්' → guide");
+  r = await kbSay('paper venum');
+  ok(r.includes('How to ask'), "KB: Tamil 'paper venum' → guide");
+  r = await kbSay('do you have chemistry papers?');
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…',
+     "KB: 'do you have chemistry papers?' has a subject → interview (not the availability text)", ffCard && ffCard.listTitle);
+  // pending interview owns the turn: KB must not steal it (in production
+  // the FILTER rejects the message outright → no reply, no react)
+  await kbSay('i want biology past paper');
+  ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…', 'KB setup: biology interview open');
+  ok(npFF.filter('you have it?', { sender: kbSender, message: { key: { fromMe: false, remoteJid: 'KB@g.us' } } }) === false,
+     "KB: pending interview + 'you have it?' → filter declines (total silence in production)");
+  r = await kbSay('you have it?');
+  ok(r === '', "KB: pending interview + 'you have it?' → interview stays boss (silent)", JSON.stringify({ r: r.slice(0, 60) }));
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

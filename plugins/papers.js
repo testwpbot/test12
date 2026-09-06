@@ -19,6 +19,7 @@ const { cmd } = require('../command');
 const config = require('../config');
 const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
+const kb = require('../lib/intent');
 const { isTapResponse } = require('../lib/msg');
 const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS, CATEGORIES, TYPE_WORDS, classifyFileName, subjectFromTokens, classifyAll } = require('../lib/papersearch');
 
@@ -1247,6 +1248,11 @@ cmd({
         if (['cancel', 'stop', 'exit', 'epa', 'nathi'].includes(tokens[0])) return true;
       }
 
+      // conversational knowledge base: "you have it?", "do you have
+      // papers?", "need paper", "paper thiyenawada?" — real asks get real
+      // answers, never silence (only when nothing is pending)
+      if (ivList(ivKey).length === 0 && kb.detect(norm)) return true;
+
       // FREE-FORM: any short message mentioning papers ("i want 2020 A/L
       // chemistry past paper") or a year + subject ("2019 chemistry") goes
       // to the AI brain — it decides if it's a real request.
@@ -1315,16 +1321,18 @@ cmd({
       return papersCommand.function(sock, mek, m, pass({ args: [] }));
     }
     // "papers next" / "papers 2021" / "papers chemistry" → .papers behaviour
-    if (tokens[0] === 'papers') {
+    // (conversational asks like "paper venum" / "papers oni" skip this —
+    // the knowledge base answers them below)
+    if (tokens[0] === 'papers' && !kb.detect(body)) {
       return papersCommand.function(sock, mek, m, pass({ args: tokens.slice(1) }));
     }
     // "paper 2" / "paper chemistry" → .paper behaviour
-    if (tokens[0] === 'paper') {
+    if (tokens[0] === 'paper' && !kb.detect(body)) {
       return paperCommand.function(sock, mek, m, pass({ args: tokens.slice(1) }));
     }
     // "paper <words>" — numbers open the list item; structured queries
     // ("paper 2016 chem sinhala") go through the .paper command
-    if (tokens[0] === 'paper') {
+    if (tokens[0] === 'paper' && !kb.detect(body)) {
       const rest = tokens.slice(1);
       const sp = smart.parsePaperQuery(rest.join(' '));
       if (sp && sp.subject) {
@@ -1370,9 +1378,12 @@ cmd({
         return ppickCommand.function(sock, mek, m, pass({ args: [field, String(nowDims[field])] }));
       }
       // a NEW partial paper ask ("i want physics papers now") → remembered as
-      // its OWN request; the older ones stay alive and answerable via their cards
-      if (nowDims.subject || nowDims.year) {
-        return startOrContinuePaperRequest(sock, mek, m, ctx, nowDims);
+      // its OWN request; the older ones stay alive and answerable via their
+      // cards. Pronouns are stripped first so "you have it?" (it ≠ ICT here)
+      // never hijacks the pending request.
+      const supDims = dimsFromText(kb.stripPronouns(body));
+      if (supDims.subject || supDims.year) {
+        return startOrContinuePaperRequest(sock, mek, m, ctx, supDims);
       }
       // anything else while a request is pending: fall through SILENTLY —
       // no react, no AI, no guide. Memory lives for 24 hours.
@@ -1409,6 +1420,24 @@ cmd({
         );
       }
       // action 'none' / unusable → local fallback decides below
+    }
+
+    // conversational knowledge base (local, always on) — availability
+    // answers ("you have it?") and the guide for generic asks
+    // ("i need papers?"). Runs after the AI brain (AI-first) and only when
+    // the student has NO pending request and the message has no details.
+    const skKb = skey(ctx);
+    if (ivList(skKb).length === 0) {
+      const ki = kb.detect(body);
+      if (ki) {
+        const kbDims = dimsFromText(kb.stripPronouns(body));
+        if (!kbDims.subject && !kbDims.year && !kbDims.medium) {
+          if (ki === 'availability') {
+            return ctx.reply('Yes! 📚 I have A/L *past papers* & *marking schemes* for every subject.\nJust type like *2016 chemistry sinhala* — or send *papers* to browse 📖');
+          }
+          return usageGuide(ctx);
+        }
+      }
     }
 
     // LOCAL FALLBACK (keys exhausted, AI down, or AI unsure): the local
