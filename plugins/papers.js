@@ -20,6 +20,7 @@ const config = require('../config');
 const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
 const kb = require('../lib/intent');
+const botinfo = require('../lib/botinfo');
 const { isTapResponse } = require('../lib/msg');
 const { sendButtons } = require('../lib/buttons');
 const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS, CATEGORIES, TYPE_WORDS, classifyFileName, subjectFromTokens, classifyAll } = require('../lib/papersearch');
@@ -1626,13 +1627,16 @@ const fallbackCmd = cmd({
       if (body.length > 200 || /https?:\/\//i.test(body)) return false;
       const lines = body.split('\n').filter((l) => l.trim());
       if (lines.length > 3) return false;
+      // ONLY when the student TAGS the bot: standalone gibberish/chat gets
+      // no response at all (the client's requirement)
+      if (!botinfo.isBotMention(mk)) return false;
       // a pending paper request owns the turn: unmatched text stays silent
       if (ivList(`${jid}:${extra.sender}`).length > 0) return false;
       return true;
     } catch (e) { return false; }
   }
 }, async (sock, mek, m, ctx) => {
-  try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
+  try { await sock.sendMessage(ctx.from, { react: { text: '🤔', key: mek.key } }); } catch (e) { /* optional */ }
   const name = String(mek.pushName || '').split(/\s+/)[0];
   const sorry = name
     ? `🤔 Sorry *${name}*, I couldn't understand that.\n\n`

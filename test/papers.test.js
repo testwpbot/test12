@@ -1617,7 +1617,25 @@ require('../plugins/greetings.js');
   ok(reacts().includes('📚'), 'ML: multi-line ack reacts 📚');
 
   const fbHandler = mmPapers.__fallback;   // same instance as mlNP/mmPapers state
+  const botinfo16 = require('../lib/botinfo');
+  botinfo16.reset();
+  botinfo16.remember('94770000001@s.whatsapp.net');   // pretend this is the bot
+  const mkTag = { key: { fromMe: false, remoteJid: 'ML@g.us' },
+    message: { extendedTextMessage: { text: 'djidj @94770000001',
+      contextInfo: { mentionedJid: ['94770000001@s.whatsapp.net'] } } } };
+  const mkTagOther = { key: { fromMe: false, remoteJid: 'ML@g.us' },
+    message: { extendedTextMessage: { text: 'djidj @94711111111',
+      contextInfo: { mentionedJid: ['94711111111@s.whatsapp.net'] } } } };
   ok(!!fbHandler, 'FB: fallback handler registered');
+  const tgSender = '94779555512@s.whatsapp.net';   // no pending requests
+  ok(fbHandler.filter('djidj', { sender: tgSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false,
+     "FB: standalone gibberish ('djidj', 'done') → NO response");
+  ok(fbHandler.filter('djidj @94770000001', { sender: tgSender, message: mkTag }) === true,
+     'FB: gibberish WHILE TAGGING the bot → the friendly guide fires');
+  ok(fbHandler.filter('djidj @94711111111', { sender: tgSender, message: mkTagOther }) === false,
+     'FB: tagging SOMEONE ELSE is not the bot → silent');
+  ok(fbHandler.filter('done', { sender: tgSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false,
+     "FB: plain 'done' → silent");
   const allNoPrefix = require('../command').replyHandlers.filter((h) => h.noPrefixTriggers === true);
   ok(allNoPrefix.filter((h) => { try { return h.filter('hello', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === true && h.filter('how are you', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false; } catch (e) { return false; } }).length >= 1 &&
      fbHandler !== allNoPrefix[0],
@@ -1633,7 +1651,7 @@ require('../plugins/greetings.js');
   sent = [];
   await fbHandler.function(sock, { key: mek.key, pushName: 'Kasun' }, ffM, { from: 'ML@g.us', body: 'xyz', sender: mlSender, reply: async (t) => { sent.push({ reply: t }); } });
   ok(lastReply().includes('Sorry *Kasun*'), 'FB: calls the student by name (from pushName)', lastReply().slice(0, 60));
-  ok(reacts().includes('📚'), 'FB: guide fallback reacts 📚');
+  ok(reacts().includes('🤔'), 'FB: guide fallback reacts 🤔');
   // pending request keeps silence: fallback declines while an interview is
   // open ('i want biology past paper' supersedes the ML chemistry interview
   // and — subject-first — asks the YEAR)
