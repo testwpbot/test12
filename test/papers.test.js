@@ -1432,6 +1432,36 @@ require('../plugins/greetings.js');
   r = await kbSay('you have it?');
   ok(r === '', "KB: pending interview + 'you have it?' → interview stays boss (silent)", JSON.stringify({ r: r.slice(0, 60) }));
 
+  /* 16ae. pick cards show ALL options — chunked sections of 10 */
+  {
+    const subs23 = ['accounting', 'agriculture', 'biology', 'businessstudies', 'chemistry', 'combinedmaths', 'civic', 'communication', 'dance', 'economics', 'english', 'geography', 'history', 'ict', 'logic', 'malay', 'music', 'physics', 'political', 'sanskit', 'sinhala', 'tamil', 'technology'];
+    const files23 = subs23.filter((s) => smart.SUBJECTS[s]).map((s) => ({
+      name: `2020_${smart.SUBJECTS[s].label.replace(/ /g, '_')}_Sinhala.pdf`, isFolder: false, path: ['X', '2020']
+    }));
+    const bigIdx = { root: { name: 'X' }, folders: [], files: files23 };
+    const usable = subs23.filter((s) => smart.SUBJECTS[s]);
+    ffCard = null;
+    await mmPapers.__askMissing(sock, mek, ffM, ctx({ from: 'CH@g.us', sender: '94779555506@s.whatsapp.net' }),
+      { id: 'zz01', year: 2020, subject: null, medium: null, type: null, cat: 'past', at: Date.now() }, bigIdx);
+    const totalRows = (ffCard.sections || []).reduce((n, s) => n + s.rows.length, 0);
+    ok(ffCard && ffCard.sections.length === Math.ceil(usable.length / 10),
+       `CH: ${usable.length} subjects → ${Math.ceil(usable.length / 10)} sections of 10`, JSON.stringify((ffCard.sections || []).map((s) => s.title)));
+    ok(totalRows === usable.length && !ffCard.text.includes('…and'),
+       'CH: EVERY subject is a tappable row — no "…and N more" hint', JSON.stringify({ totalRows, want: usable.length, text: ffCard.text.slice(0, 80) }));
+    const allTitles = ffCard.sections.flatMap((s) => s.rows.map((r) => r.title)).join('|');
+    ok(usable.every((s) => allTitles.includes(smart.SUBJECTS[s].label)),
+       'CH: all subject names present on the card');
+    ffCard = null;
+    await mmPapers.__askMissing(sock, mek, ffM, ctx({ from: 'CH2@g.us', sender: '94779555507@s.whatsapp.net' }),
+      { id: 'zz02', year: 2020, subject: null, medium: null, type: null, cat: 'past', at: Date.now() },
+      { root: { name: 'X' }, folders: [], files: [
+        { name: '2020_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2020'] },
+        { name: '2020_Physics_Sinhala.pdf', isFolder: false, path: ['X', '2020'] }
+      ] });
+    ok(ffCard && ffCard.sections.length === 1 && ffCard.sections[0].title === '🧭 Tap your answer',
+       'CH2: ≤10 options → single friendly section (unchanged look)', JSON.stringify(ffCard && ffCard.sections.map((s) => s.title)));
+  }
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

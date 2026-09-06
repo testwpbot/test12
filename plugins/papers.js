@@ -27,7 +27,8 @@ const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS, CATEGORIES, TYPE_WORDS, 
 /* ── tunables ────────────────────────────────────────────────────────── */
 const LIST_TTL = 15 * 60 * 1000;         // how long ".paper N" stays valid
 const PAGE_SIZE = 30;                    // entries per text list message
-const BUTTON_ROWS = 10;                  // entries per dropdown (WhatsApp row cap)
+const BUTTON_ROWS = 10;                  // rows per list SECTION (WhatsApp cap)
+const MAX_CARD_ROWS = 50;                // absolute row cap (5 sections × 10)
 const MAX_ACTIVE_DOWNLOADS = 2;          // parallel uploads to WhatsApp
 const DEFAULT_MAX_MB = 95;
 const DEFAULT_COOLDOWN = 30;             // seconds between downloads per user
@@ -614,14 +615,14 @@ async function askMissing(sock, mek, m, ctx, st, index) {
   let rows = [], question = '', listTitle = '', more = '';
   if (!st.year) {
     const years = yearsFor(index, st.subject, st.medium, st.cat);
-    const shown = years.slice(0, BUTTON_ROWS);
+    const shown = years.slice(0, MAX_CARD_ROWS);
     rows = shown.map((y) => ({ id: `${config.PREFIX}ppick ${st.id} year ${y}`, title: `📅 ${y}`, description: `${st.subject ? SUBJECTS[st.subject].label : 'Papers'} ${y}` }));
     if (years.length > shown.length) more = `\n📄 …and ${years.length - shown.length} more years — type the year`;
     question = '📅 *What year do you need?*';
     listTitle = '🗓️ Pick a year…';
   } else if (!st.subject) {
     const subs = subjectsForYear(index, st.year);
-    const shown = subs.slice(0, BUTTON_ROWS);
+    const shown = subs.slice(0, MAX_CARD_ROWS);
     rows = shown.map((s) => ({ id: `${config.PREFIX}ppick ${st.id} subject ${s}`, title: `📘 ${SUBJECTS[s].label}`, description: `${st.year} papers` }));
     if (subs.length > shown.length) more = `\n📄 …and ${subs.length - shown.length} more — type the subject name`;
     question = '📘 *Which subject do you need?*';
@@ -640,13 +641,23 @@ async function askMissing(sock, mek, m, ctx, st, index) {
     `💬 Or just type your answer` +
     (st.type ? `\n${TYPE_LABELS[st.type] || ''}` : '');
   if (m && typeof m.sendButtonMenu === 'function') {
+    // WhatsApp allows multiple sections of 10 rows — chunk so EVERY
+    // option is tappable (28 subjects = 3 sections, nothing hidden)
+    const sections = [];
+    if (rows.length <= 10) {
+      sections.push({ title: '🧭 Tap your answer', rows });
+    } else {
+      for (let i = 0; i < rows.length; i += 10) {
+        sections.push({ title: `🧭 Options ${i + 1}–${Math.min(i + 10, rows.length)}`, rows: rows.slice(i, i + 10) });
+      }
+    }
     try {
       await m.sendButtonMenu({
         title: '',
         text: body,
         footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
         listTitle,
-        sections: [{ title: '🧭 Tap your answer', rows }]
+        sections
       });
       return;
     } catch (e) { console.error('papers: question card failed:', e.message || e); }
@@ -1537,5 +1548,6 @@ module.exports = {
     sendHubCard,
   buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
   __interviews: interviews,
+  __askMissing: askMissing,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
 };
