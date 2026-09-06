@@ -6,7 +6,7 @@
  * ─────────────────────────────────────────────────────────────────────── */
 const { cmd } = require('../command');
 const config = require('../config');
-const { buildGuide } = require('./papers');
+const { buildShortGuide } = require('./papers');
 const guideGate = require('../lib/guidegate');
 
 let settingsPlugin = null;
@@ -105,7 +105,7 @@ cmd({
     await ctx.reply(
       `${hello} I'm *${config.BOT_NAME}* 🤖\n` +
       `I send A/L *past papers, FWC, provincial papers & marking schemes* 📚\n\n` +
-      buildGuide()
+      buildShortGuide()
     );
     guideGate.mark(ctx);
   } catch (e) {

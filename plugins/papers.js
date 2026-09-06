@@ -769,6 +769,10 @@ function buildGuide() {
     `📚 Or send *papers* to browse the full menu (${words.length} subjects)`
   );
 }
+/** One-line version for greetings — a single example only. */
+function buildShortGuide() {
+  return `💡 E.g. *2016 chemistry sinhala medium* — or just send *papers* 📚`;
+}
 function usageGuide(ctx) {
   // anti-spam: one guide per student per gap (default 6h, GUIDE_GAP_HOURS)
   if (guideGate.recent(ctx)) return;
@@ -1455,7 +1459,7 @@ cmd({
 module.exports = {
   resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
     sendHubCard,
-  buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
+  buildGuide, buildShortGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
   __interviews: interviews,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
 };

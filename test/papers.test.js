@@ -1121,19 +1121,27 @@ require('../plugins/greetings.js');
     lastCard = null;
     await greetH.function(sock, mek, mCard, { from: 'GR@g.us', body: 'hello', pushname: 'Kasun', reply: async (t) => { sent.push({ reply: t }); } });
     const g = sent.map((s) => s.reply).join('\n');
-    ok(g.includes('Hello') && g.includes('How to ask for a paper') && g.includes('2016 chemistry sinhala medium'),
-       'greeting reply = warm hello + paper guide', g.slice(0, 120));
+    ok(g.includes('Hello') && g.includes('E.g.') && g.includes('2016 chemistry sinhala medium') &&
+       !g.includes('How to ask') && !g.includes('Short terms'),
+       'greeting reply = warm hello + ONE-line example (short guide)', g.slice(0, 140));
   }
   const papersModZ = require('../plugins/papers');
   ok(papersModZ.buildGuide().includes('fwc') && papersModZ.buildGuide().includes('marking scheme'),
      'buildGuide includes collections');
+  ok(papersModZ.buildShortGuide().includes('2016 chemistry sinhala medium') &&
+     !papersModZ.buildShortGuide().includes('How to ask') && !papersModZ.buildShortGuide().includes('fwc'),
+     'buildShortGuide = one example line only');
+  ok(papersModZ.buildGuide().length > papersModZ.buildShortGuide().length * 3,
+     'full guide is much longer than the greeting example line');
 
   /* 15aa. guide/greeting anti-spam memory (GUIDE_GAP_HOURS) */
   const guideGate = require('../lib/guidegate');
   guideGate.reset();   // default GUIDE_GAP_HOURS = 6 is already active
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'first "i want papers" → guide sent');
+  const fullGuide = sent.map((s) => s.reply).join('');
+  ok(fullGuide.includes('How to ask') && fullGuide.includes('Short terms') && fullGuide.includes('fwc'),
+     'first "i want papers" → FULL exact how-to-ask guide (not the short one)');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   ok(sent.length === 0, 'repeat within the gap → silent (no spam)', JSON.stringify(sent));
