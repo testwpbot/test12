@@ -21,6 +21,7 @@ const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
 const kb = require('../lib/intent');
 const { isTapResponse } = require('../lib/msg');
+const { sendButtons } = require('../lib/buttons');
 const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS, CATEGORIES, TYPE_WORDS, classifyFileName, subjectFromTokens, classifyAll } = require('../lib/papersearch');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
@@ -875,6 +876,30 @@ async function directPaperRequest(sock, mek, m, ctx, q) {
   return paperNotFound(ctx, index, q, degraded);
 }
 
+/* ── papers welcome — image card + 2 buttons (Past Papers / Marking) ─── */
+async function sendPapersWelcome(sock, mek, m, ctx) {
+  const name = String(ctx.pushname || mek.pushName || '').split(/\s+/)[0];
+  const hello = name ? `👋 Hello *${name}*!` : '👋 Hello!';
+  const card =
+    `${hello}\n\n` +
+    `🎓 Welcome to *Almate.edu.lk*\n` +
+    `Your Smart A/L Learning AI Assistant 🇱🇰\n\n` +
+    `What do you need? 👇`;
+  try {
+    await sendButtons(sock, ctx.from, {
+      image: config.ALIVE_IMG,
+      text: card,
+      footer: 'Almate.edu.lk 🇱🇰',
+      buttons: [
+        { id: `${config.PREFIX}papers menu`, text: '📚 Past Papers' },
+        { id: `${config.PREFIX}ms`, text: '📖 Marking Schemes' }
+      ]
+    }, { quoted: mek });
+  } catch (e) {
+    await ctx.reply(`${card}\n\n📚 *Past Papers* → send *papers menu*\n📖 *Marking Schemes* → send *ms*`);
+  }
+}
+
 /* ── .papers — browse / search ───────────────────────────────────────── */
 const papersCommand = cmd({
   pattern: 'papers',
@@ -933,11 +958,15 @@ const papersCommand = cmd({
     }
 
     const query = args.join(' ').trim();
-    if (!query) {
-      // Bare "papers" = the main menu, ALWAYS fresh — never resume an old
-      // sub-folder position. (back/next still work within an active browse.)
+    if (arg0 === 'menu') {
+      // the full browse menu, ALWAYS fresh — never resume an old sub-folder
       delete browse[sk];
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
+    }
+    if (!query) {
+      // Bare "papers" = short welcome card (alive image + 2 buttons);
+      // the full menu is one tap away (📚 Past Papers → .papers menu)
+      return sendPapersWelcome(sock, mek, m, ctx);
     }
 
     // structured request first: ".papers 2016 chemistry sinhala medium"
