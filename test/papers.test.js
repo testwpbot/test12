@@ -1542,6 +1542,20 @@ require('../plugins/greetings.js');
     ok(!listMsg.includes('42 subjects'), 'no hardcoded 42 — count always computed live');
   }
 
+  /* 16ah. owner-only .subjects check — audit what was counted */
+  {
+    const sbc = commands.filter((c) => c.pattern === 'subjects').pop();
+    sent = [];
+    await sbc.function(sock, mek, {}, ctx({ from: 'SBC@g.us', args: ['check'], sender: '94779555509@s.whatsapp.net', isOwner: true }));
+    const ck = lastReply();
+    ok(ck.includes('Subject inventory check') && ck.includes('From names/aliases') &&
+       ck.includes('Unknown subject folders') && ck.includes('Scanned'),
+       '.subjects check → owner audit breakdown (names/files/folders + totals)', ck.slice(0, 200));
+    sent = [];
+    await sbc.function(sock, mek, {}, ctx({ from: 'SBC@g.us', args: ['check'], sender: '94779555509@s.whatsapp.net', isOwner: false }));
+    ok(lastReply().includes('⛔ Owner only.'), '.subjects check is owner-only');
+  }
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

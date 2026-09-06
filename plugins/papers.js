@@ -1210,6 +1210,20 @@ cmd({
 }, async (sock, mek, m, ctx) => {
   try {
     const { index } = await getIndex();
+    if ((ctx.args || [])[0] === 'check') {
+      // owner-only audit: exactly WHAT was counted and WHERE from
+      if (!(ctx.isOwner || ctx.isMe)) return ctx.reply('⛔ Owner only.');
+      const inv = smart.subjectsInIndex(index);
+      const by = (s) => inv.filter((e) => e.src === s).map((e) => e.label);
+      const names = by('name'), files = by('files'), folders = by('folder');
+      return ctx.reply(
+        `📋 *Subject inventory check* — ${inv.length} total\n\n` +
+        `🔎 From names/aliases (${names.length}):\n${names.join(', ')}\n\n` +
+        (files.length ? `🌐 Language subjects from files (${files.length}):\n${files.join(', ')}\n\n` : '') +
+        `📁 Unknown subject folders (${folders.length}):\n${folders.length ? folders.join(', ') : 'none'}\n\n` +
+        `📊 Scanned ${index.files.length} files · ${index.folders.length} folders`
+      );
+    }
     return ctx.reply(subjectsListMessage(index));
   } catch (e) {
     return ctx.reply('📚 The papers library is being set up — please try again shortly. 🛠️');
