@@ -1,0 +1,109 @@
+/* ── greetings & mentions ──────────────────────────────────────────────
+ * "hello" / "hi" (any short greeting, Sinhala/Tamil included) gets a warm
+ * reply with the how-to-ask-a-paper guide. When a member MENTIONS the bot
+ * and greets, it greets back; mention + a paper ask is served by the
+ * papers engine (its handler catches the request first).
+ * ─────────────────────────────────────────────────────────────────────── */
+const { cmd } = require('../command');
+const config = require('../config');
+const { buildGuide } = require('./papers');
+
+let settingsPlugin = null;
+try { settingsPlugin = require('./settings'); } catch (e) { /* optional */ }
+
+// greeting vocab (EN + Sinhala + Tamil) + the company words that may trail
+const GREET_WORDS = new Set([
+  'hi', 'hii', 'hiii', 'hello', 'helo', 'halo', 'hlo', 'hey', 'hai',
+  'ayubowan', 'aubowan', 'aayubowan', 'ආයුබෝවන්', 'ආයුබෝ', 'හලෝ', 'හෙලෝ', 'හල්ලෝ',
+  'vanakkam', 'வணக்கம்',
+  'good', 'morning', 'afternoon', 'evening', 'night', 'gm', 'gn',
+  'bro', 'machan', 'aiya', 'sir', 'team', 'all'
+]);
+
+const digitsOf = (j) => String(j || '').split('@')[0].replace(/[^0-9]/g, '');
+
+/** Every number that counts as "the bot itself". */
+function botDigits(sock) {
+  const set = new Set();
+  for (const j of [sock && sock.user && sock.user.id, config.BOT_OWNER, config.LOG_NUMBER]) {
+    const d = digitsOf(j);
+    if (d) set.add(d);
+  }
+  return set;
+}
+
+/** Is the bot mentioned in this message? (mentionedJid or "@<number>") */
+function mentionedBy(mek, sock) {
+  const mm = mek && mek.message;
+  if (!mm) return false;
+  const cx = (mm.extendedTextMessage && mm.extendedTextMessage.contextInfo) ||
+             (mm.imageMessage && mm.imageMessage.contextInfo) ||
+             (mm.videoMessage && mm.videoMessage.contextInfo);
+  const mine = botDigits(sock);
+  if (cx && Array.isArray(cx.mentionedJid) &&
+      cx.mentionedJid.some((j) => mine.has(digitsOf(j)))) return true;
+  const body = String(mm.conversation || (mm.extendedTextMessage && mm.extendedTextMessage.text) || '');
+  for (const d of mine) if (d.length > 4 && body.includes('@' + d)) return true;
+  return false;
+}
+
+const stripMentionTokens = (text) =>
+  String(text || '').replace(/@\S+/g, ' ').replace(/\s+/g, ' ').trim();
+
+const isPureGreeting = (text) => {
+  const toks = stripMentionTokens(text).toLowerCase().replace(/\u200D/g, '')
+    .replace(/[^\p{L}\p{M}\p{N}\s]+/gu, ' ').split(/\s+/).filter(Boolean);
+  return toks.length >= 1 && toks.length <= 3 && toks.every((t) => GREET_WORDS.has(t));
+};
+
+cmd({
+  noPrefixTriggers: true,
+  filter: (text, extra) => {
+    try {
+      const mek = extra && extra.message;
+      if (!mek || mek.key?.fromMe) return false;            // never greet ourselves
+      const jid = String(mek.key?.remoteJid || '');
+      if (!jid || jid.endsWith('@broadcast')) return false;
+      if (settingsPlugin && settingsPlugin.isPending &&
+          settingsPlugin.isPending(extra.sender)) return false;
+
+      const body = String(text || '').trim();
+      if (!body || body.length > 60 || body.includes('\n') || body.includes('http://') || body.includes('https://')) return false;
+
+      // 1) plain short greeting: "hello", "hi bro", "good morning"
+      if (isPureGreeting(body)) return true;
+
+      // 2) bot mentioned + greeting/empty remainder: "@AI Mate hi"
+      if (mentionedBy(mek)) {
+        const nameWords = String(config.BOT_NAME || '').toLowerCase().split(/\s+/).filter(Boolean);
+        const restToks = stripMentionTokens(body).toLowerCase().replace(/\u200D/g, '')
+          .replace(/[^\p{L}\p{M}\p{N}\s]+/gu, ' ').split(/\s+/)
+          .filter((t) => t && !nameWords.includes(t));
+        if (!restToks.length) return true;                       // bare mention
+        // a real paper ask ("@Bot 2019 chemistry sinhala") → papers engine
+        const paperish = restToks.some((t) => /^(19|20)\d{2}$/.test(t)) ||
+          restToks.includes('papers') || restToks.includes('paper') || restToks.includes('pp');
+        if (paperish) return false;
+        if (restToks.length <= 3 && restToks.every((t) => GREET_WORDS.has(t))) return true;
+        if (restToks.length <= 6 && restToks.some((t) => GREET_WORDS.has(t))) return true;
+        return false;
+      }
+      return false;
+    } catch (e) {
+      console.error('greeting filter error:', (e && e.message) || e);
+      return false;
+    }
+  }
+}, async (sock, mek, m, ctx) => {
+  try {
+    const name = String(mek.pushName || '').split(/\s+/)[0];
+    const hello = name ? `👋 *Hello, ${name}!*` : '👋 *Hello!*';
+    await ctx.reply(
+      `${hello} I'm *${config.BOT_NAME}* 🤖\n` +
+      `I send A/L *past papers, FWC, provincial papers & marking schemes* 📚\n\n` +
+      buildGuide()
+    );
+  } catch (e) {
+    console.error('greeting reply error:', (e && e.message) || e);
+  }
+});

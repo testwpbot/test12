@@ -715,17 +715,22 @@ function parseInterviewAnswer(body) {
 }
 
 /* ── structured requests — "2016 chemistry sinhala medium" ───────────── */
-function usageGuide(ctx) {
+/** The reusable "how to ask" guide text (greetings + usage + fallbacks). */
+function buildGuide() {
   const words = Object.values(SUBJECTS).map((s) => s.label);
   const shorts = 'chem • phy • bio • com maths • agri • econ • bs • acc • ict • et • sft • bst • stat';
-  return ctx.reply(
+  return (
     `📖 *How to ask for a paper*\n\n` +
     `Type: *Year + Subject + Medium*\n` +
     `Example: *2016 chemistry sinhala medium*\n\n` +
     `🔤 Short terms: ${shorts}\n` +
-    `🌐 Mediums: sinhala • english • tamil\n\n` +
+    `🌐 Mediums: sinhala • english • tamil\n` +
+    `📦 Also: *fwc* • *provincial* • *marking scheme / answer sheet*\n\n` +
     `📚 Or send *papers* to browse the full menu (${words.length} subjects)`
   );
+}
+function usageGuide(ctx) {
+  return ctx.reply(buildGuide());
 }
 
 /**
@@ -1345,7 +1350,7 @@ cmd({
 
 module.exports = {
   resolveView, renderText, renderRows: buildRows, getIndex, downloadEntry, enqueue,
-  sendHubCard,
-  fmtSize, cleanName, mimeFor, fileNameFor,
+    sendHubCard,
+  buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
 };

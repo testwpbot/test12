@@ -914,6 +914,7 @@ const ok = (cond, name, extra) => {
 
   /* 15l. sendHubCard — welcome + papers menu in ONE message */
   const papersMod = require('../plugins/papers');
+require('../plugins/greetings.js');
   ok(typeof papersMod.sendHubCard === 'function', 'sendHubCard exported');
   lastCard = null;
   const hubCtx = { from: 'HUB@g.us', reply: async (t) => { sent.push({ reply: t }); } };
@@ -1082,6 +1083,50 @@ const ok = (cond, name, extra) => {
        typeof settingsRegistry.WORK_MODE.validate('banana') === 'string',
        'WORK_MODE setting validates group|both only');
   }
+
+  /* 15z. greetings & mentions */
+  const { replyHandlers: rh2 } = require('../command');
+  const greetH = rh2.filter((h) => h.noPrefixTriggers === true)
+    .find((h) => { try { return h.filter('hello', { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } } }) === true; } catch (e) { return false; } });
+  ok(!!greetH, 'greeting handler registered');
+  if (greetH) {
+    const gf = (t, extra = {}) => greetH.filter(t, { sender: '9477@s.whatsapp.net', message: { key: { fromMe: false, remoteJid: 'G@g.us' } }, ...extra });
+    ok(gf('hello') === true, "greeting: 'hello' triggers");
+    ok(gf('Hi!') === true, "greeting: 'Hi!' triggers");
+    ok(gf('hi bro') === true, "greeting: 'hi bro' triggers");
+    ok(gf('good morning') === true, "greeting: 'good morning' triggers");
+    ok(gf('හලෝ') === true, "greeting: Sinhala 'හලෝ' triggers");
+    ok(gf('vanakkam') === true, "greeting: Tamil 'vanakkam' triggers");
+    ok(gf('hello bro 2019') === false, 'greeting: not a pure greeting → papers flow');
+    ok(gf('how are you') === false, "greeting: 'how are you' ignored");
+    ok(gf('papers') === false, "greeting: 'papers' belongs to the papers engine");
+    ok(gf('hello', { message: { key: { fromMe: true, remoteJid: 'G@g.us' } } }) === false,
+       'greeting: never greets its own messages');
+    // mention detection (JID + @number forms)
+    const mekMention = { key: { fromMe: false, remoteJid: 'GM@g.us' },
+      message: { extendedTextMessage: { text: '@AI Mate hi',
+        contextInfo: { mentionedJid: ['94776121326@s.whatsapp.net'] } } } };
+    ok(gf('@AI Mate hi', { message: mekMention }) === true, 'mention: @bot + hi triggers');
+    const mekMentionNum = { key: { fromMe: false, remoteJid: 'GM@g.us' },
+      message: { extendedTextMessage: { text: '@94776121326 hello',
+        contextInfo: { mentionedJid: [] } } } };
+    ok(gf('@94776121326 hello', { message: mekMentionNum }) === true, 'mention: @<bot number> + hello triggers');
+    const mekOther = { key: { fromMe: false, remoteJid: 'GM@g.us' },
+      message: { extendedTextMessage: { text: '@someone what time is it',
+        contextInfo: { mentionedJid: ['94700000000@s.whatsapp.net'] } } } };
+    ok(gf('@someone what time is it', { message: mekOther }) === false,
+       'mention: other people + non-greeting ignored');
+    // e2e: greeting reply carries the guide
+    sent = [];
+    lastCard = null;
+    await greetH.function(sock, mek, mCard, { from: 'GR@g.us', body: 'hello', pushname: 'Kasun', reply: async (t) => { sent.push({ reply: t }); } });
+    const g = sent.map((s) => s.reply).join('\n');
+    ok(g.includes('Hello') && g.includes('How to ask for a paper') && g.includes('2016 chemistry sinhala medium'),
+       'greeting reply = warm hello + paper guide', g.slice(0, 120));
+  }
+  const papersModZ = require('../plugins/papers');
+  ok(papersModZ.buildGuide().includes('fwc') && papersModZ.buildGuide().includes('marking scheme'),
+     'buildGuide includes collections');
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
