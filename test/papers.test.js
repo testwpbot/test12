@@ -1062,6 +1062,27 @@ const ok = (cond, name, extra) => {
   const tap = { message: { listResponseMessage: { singleSelectReply: { selectedRowId: '.paper 1' } } } };
   ok(isTapResponse(tap) === true, 'legacy tap detected (listResponseMessage) — never quoted');
 
+  /* 15y. working-mode gate */
+  const { chatAllowed } = require('../lib/mode');
+  const settingsRegistry = config.SETTINGS_META || {};
+  ok(chatAllowed('group', { isGroup: true }) === true, 'group mode: groups work');
+  ok(chatAllowed('group', { isGroup: false, isOwner: true }) === true, 'group mode: owner inbox works');
+  ok(chatAllowed('group', { isGroup: false, fromMe: true }) === true, 'group mode: bot own account works');
+  ok(chatAllowed('group', { isGroup: false, isOwner: false, fromMe: false }) === false,
+     'group mode: other inboxes blocked (silently)');
+  ok(chatAllowed('both', { isGroup: false, isOwner: false, fromMe: false }) === true,
+     'both mode: every inbox works');
+  ok(chatAllowed('BOTH', { isGroup: false }) === true, 'mode is case-insensitive');
+  ok(chatAllowed('', { isGroup: false }) === false && chatAllowed('junk', { isGroup: true }) === true,
+     'unknown/empty mode falls back to group');
+  ok(!!settingsRegistry.WORK_MODE, 'WORK_MODE exposed in the settings registry');
+  if (settingsRegistry.WORK_MODE && settingsRegistry.WORK_MODE.validate) {
+    ok(settingsRegistry.WORK_MODE.validate('both') === true &&
+       settingsRegistry.WORK_MODE.validate('group') === true &&
+       typeof settingsRegistry.WORK_MODE.validate('banana') === 'string',
+       'WORK_MODE setting validates group|both only');
+  }
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

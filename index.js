@@ -29,6 +29,7 @@ const qrcode = require('qrcode-terminal');
 
 const config = require('./config');
 const { sms, downloadMediaMessage, isTapResponse } = require('./lib/msg');
+const { chatAllowed } = require('./lib/mode');
 const { sendButtons, sendInteractive, sendButtonMenu } = require('./lib/buttons');
 const {
   getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson,
@@ -408,6 +409,14 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
     const pushname = mek.pushName || 'Sin Nombre';
     const isMe = senderNumber.length > 0 && senderNumber === botNumberDigits;
     const isOwner = config.isOwner(senderNumber) || isMe;
+
+    // ── working mode ──
+    // "group" (default): answer only in groups + the owner's inbox — other
+    // private chats are ignored SILENTLY. "both": groups + every inbox.
+    // (Commands, reply handlers and paper flows all sit below this line.)
+    if (!chatAllowed(config.WORK_MODE, { isGroup, isOwner, fromMe: !!(mek.key && mek.key.fromMe) })) {
+      return;
+    }
     const botNumber2 = await jidNormalizedUser(test.user.id);
 
     const groupMetadata = isGroup ? await test.groupMetadata(from).catch(() => {}) : '';

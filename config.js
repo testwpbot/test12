@@ -38,6 +38,7 @@ const SETTINGS = {
   AI_DAILY_CAP: "500",
   PAPERS_ROOT_NAME: "AI Mate Papers",
   PAPERS_NO_PREFIX: "true",
+  WORK_MODE: "group",
   WELCOME_NEW_MEMBERS: "true",
   WELCOME_MSG: "*👋 Welcome, {name}! 🎓*\n*You're in {group} 📖*\n*🤖 I'm {bot} — type papers to grab past papers.*"
 };
@@ -180,6 +181,13 @@ const SETTINGS_META = {
     desc: 'Shown in the .papers menu instead of the Drive folder name',
     type: 'text',
     validate: (v) => (v.length <= 40 ? true : 'Keep it under 40 characters.')
+  },
+  WORK_MODE: {
+    label: 'Bot working mode',
+    desc: '"group" = groups + your inbox only · "both" = groups + all inboxes',
+    type: 'text',
+    validate: (v) => (['group', 'both'].includes(String(v).trim().toLowerCase())
+      ? true : 'Use "group" or "both".')
   },
   PAPERS_NO_PREFIX: {
     label: 'Papers no-prefix mode',
