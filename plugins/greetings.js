@@ -133,31 +133,28 @@ cmd({
     if (guideGate.recent(ctx, fam)) return;
     const name = String(mek.pushName || '').split(/\s+/)[0];
     const hello = name ? `👋 Hello *${name}*!` : '👋 Hello!';
+    // options live ONLY on the buttons below — no text list (no duplication)
     const card =
       `${hello}\n\n` +
       `🎓 Welcome to *Almate.edu.lk*\nhttps://almate.edu.lk\n\n` +
       `Your Smart A/L Learning AI Assistant 🇱🇰\n\n` +
-      `How can I help you?\n\n` +
-      `1️⃣ A/L Past Papers\n` +
-      `2️⃣ A/L Marking Schemes\n` +
-      `3️⃣ Almate AI Assistant 🤖\n` +
-      `4️⃣ Join A/L Stream Group`;
+      `How can I help you? 👇`;
     try {
       // quick-reply buttons attached to the message (NOT a menu dropdown);
       // taps arrive as buttonsResponseMessage → body → normal command pipeline
       await sendButtons(sock, ctx.from, {
         text: card,
-        footer: '🚧 Options 3 & 4 are coming soon!',
+        footer: '🚧 AI Assistant & Stream Group are coming soon!',
         buttons: [
-          { id: '.papers', text: '1️⃣ Past Papers' },
-          { id: '.ms', text: '2️⃣ Marking Schemes' },
-          { id: '.ai', text: '3️⃣ AI Assistant' },
-          { id: '.stream', text: '4️⃣ Stream Group' }
+          { id: '.papers', text: '📚 Past Papers' },
+          { id: '.ms', text: '📖 Marking Schemes' },
+          { id: '.ai', text: '🤖 AI Assistant' },
+          { id: '.stream', text: '👥 Stream Group' }
         ]
       }, { quoted: mek });
     } catch (e) {
       // button send failed → plain-text fallback keeps the greeting alive
-      await ctx.reply(`${card}\n\n🚧 Options 3 & 4 are coming soon!`);
+      await ctx.reply(`${card}\n\n📚 *Past Papers* • 📖 *Marking Schemes*\n🤖 *AI Assistant* & 👥 *Stream Group* — coming soon!`);
     }
     guideGate.mark(ctx, fam);   // this greeting word (per-word memory)
   } catch (e) {

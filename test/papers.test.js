@@ -1126,14 +1126,16 @@ require('../plugins/greetings.js');
     await greetH.function(sock, { key: mek.key, pushName: 'Kasun' }, mCard, { from: 'GR@g.us', body: 'hello', pushname: 'Kasun', reply: async (t) => { sent.push({ reply: t }); } });
     const gc = ((global.__giftedCalls || []).at(-1) || {}).payload || {};
     ok(gc.text && gc.text.includes('Hello *Kasun*') && gc.text.includes('Welcome to *Almate.edu.lk*') &&
-       gc.text.includes('How can I help you?') && gc.text.includes('1️⃣ A/L Past Papers') &&
-       gc.text.includes('4️⃣ Join A/L Stream Group'),
-       'greeting = Almate welcome card mentioning the student by name', (gc.text || '').slice(0, 140));
+       gc.text.includes('How can I help you?') &&
+       !gc.text.includes('1️⃣') && !gc.text.includes('2️⃣') && !gc.text.includes('Past Papers'),
+       'greeting = Almate welcome card (name) with NO text option list — buttons only', (gc.text || '').slice(0, 140));
     ok(Array.isArray(gc.buttons) && gc.buttons.length === 4 &&
-       gc.buttons[0].id === '.papers' && gc.buttons[1].id === '.ms' &&
-       gc.buttons[2].id === '.ai' && gc.buttons[3].id === '.stream',
-       'welcome card carries the 4 attached tap buttons', JSON.stringify(gc.buttons));
-    ok((gc.footer || '').toLowerCase().includes('coming soon'), 'options 3 & 4 flagged coming soon');
+       gc.buttons[0].id === '.papers' && gc.buttons[0].text.includes('📚') &&
+       gc.buttons[1].id === '.ms' && gc.buttons[1].text.includes('📖') &&
+       gc.buttons[2].id === '.ai' && gc.buttons[2].text.includes('🤖') &&
+       gc.buttons[3].id === '.stream' && gc.buttons[3].text.includes('👥'),
+       '4 attached buttons with matching emojis (📚 📖 🤖 👥)', JSON.stringify(gc.buttons));
+    ok((gc.footer || '').toLowerCase().includes('coming soon'), 'coming-soon note in the footer');
   }
   const papersModZ = require('../plugins/papers');
   ok(papersModZ.buildGuide().includes('marking scheme') &&
