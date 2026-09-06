@@ -1633,7 +1633,11 @@ const fallbackCmd = cmd({
   }
 }, async (sock, mek, m, ctx) => {
   try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
-  return usageGuide(ctx);   // the guide — every time, never remembered
+  const name = String(mek.pushName || '').split(/\s+/)[0];
+  const sorry = name
+    ? `🤔 Sorry *${name}*, I couldn't understand that.\n\n`
+    : `🤔 Sorry, I couldn't understand that.\n\n`;
+  return ctx.reply(`${sorry}${buildGuide()}`);   // friendly + the guide, every time
 });
 
 module.exports = {

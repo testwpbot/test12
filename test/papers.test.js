@@ -1628,8 +1628,11 @@ require('../plugins/greetings.js');
      'FB: URLs, 4+ lines and commands never trigger the guide');
   sent = [];
   await fbHandler.function(sock, mek, ffM, { from: 'ML@g.us', body: 'hello there friend', sender: mlSender, reply: async (t) => { sent.push({ reply: t }); } });
-  ok(lastReply().includes('Getting your paper is easy') && lastReply().includes('almate.edu.lk'),
-     'FB: ununderstood text → the how-to-ask guide', lastReply().slice(0, 80));
+  ok(lastReply().includes("couldn't understand") && lastReply().includes('Getting your paper is easy') && lastReply().includes('almate.edu.lk'),
+     'FB: ununderstood text → friendly sorry + the how-to-ask guide', lastReply().slice(0, 100));
+  sent = [];
+  await fbHandler.function(sock, { key: mek.key, pushName: 'Kasun' }, ffM, { from: 'ML@g.us', body: 'xyz', sender: mlSender, reply: async (t) => { sent.push({ reply: t }); } });
+  ok(lastReply().includes('Sorry *Kasun*'), 'FB: calls the student by name (from pushName)', lastReply().slice(0, 60));
   ok(reacts().includes('📚'), 'FB: guide fallback reacts 📚');
   // pending request keeps silence: fallback declines while an interview is
   // open ('i want biology past paper' supersedes the ML chemistry interview
