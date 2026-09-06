@@ -891,12 +891,12 @@ async function sendPapersWelcome(sock, mek, m, ctx) {
       text: card,
       footer: 'Almate.edu.lk 🇱🇰',
       buttons: [
-        { id: `${config.PREFIX}papers menu`, text: '📚 Past Papers' },
+        { id: `${config.PREFIX}pp`, text: '📚 Past Papers' },
         { id: `${config.PREFIX}ms`, text: '📖 Marking Schemes' }
       ]
     }, { quoted: mek });
   } catch (e) {
-    await ctx.reply(`${card}\n\n📚 *Past Papers* → send *papers menu*\n📖 *Marking Schemes* → send *ms*`);
+    await ctx.reply(`${card}\n\n📚 *Past Papers* → send *pp*\n📖 *Marking Schemes* → send *ms*`);
   }
 }
 
@@ -959,7 +959,12 @@ const papersCommand = cmd({
 
     const query = args.join(' ').trim();
     if (arg0 === 'menu') {
-      // the full browse menu, ALWAYS fresh — never resume an old sub-folder
+      // the clean student flow: 📅 year → 📘 subject → 🌐 medium → paper
+      // (modern tap cards — the raw folder list is NOT the student UI)
+      return startOrContinuePaperRequest(sock, mek, m, ctx, { cat: 'past' });
+    }
+    if (arg0 === 'browse') {
+      // legacy folder browser for power users — always fresh at the root
       delete browse[sk];
       return showView(sock, mek, m, ctx, { kind: 'folder', pathIds: [], pathNames: [] }, 1);
     }
@@ -1157,6 +1162,17 @@ const paperCommand = cmd({
     }
     return reply(`❌ ${gdrive.friendlyError(e)}`);
   }
+});
+
+/* ── .pp — PAST PAPERS interview (welcome-card button) ────────────────── */
+cmd({
+  pattern: 'pp',
+  react: '📚',
+  desc: 'Find past papers (year → subject → medium)',
+  category: 'main',
+  filename: __filename
+}, async (sock, mek, m, ctx) => {
+  return startOrContinuePaperRequest(sock, mek, m, ctx, { cat: 'past' });
 });
 
 /* ── .ms — start a MARKING SCHEME request (welcome-card button) ───────── */

@@ -171,7 +171,7 @@ const ok = (cond, name, extra) => {
 
 (async () => {
   /* 1. root listing (the full menu lives at .papers menu) */
-  await papersCmd.function(sock, mek, {}, ctx({ args: ['menu'] }));
+  await papersCmd.function(sock, mek, {}, ctx({ args: ['browse'] }));
   let r = lastReply();
   ok(r.includes('AI Mate Papers'), 'root listing shows root name');
   ok(/1\. 📁 \*2020\*/.test(r) && /2\. 📁 \*2021\*/.test(r), 'folders listed first, numbered', r);
@@ -287,7 +287,7 @@ const ok = (cond, name, extra) => {
   const freshPapers = commands.filter((c) => c.pattern === 'papers').pop();
   const freshPaper = commands.filter((c) => c.pattern === 'paper').pop();
   sent = [];
-  await freshPapers.function(sock, mek, {}, ctx({ args: ['menu'] }));
+  await freshPapers.function(sock, mek, {}, ctx({ args: ['browse'] }));
   r = lastReply();
   ok(r.includes('AI Mate Papers') && r.includes('2021'), 'outage: listing served from disk cache', r);
   ok(r.includes('saved copy'), 'outage: degraded notice shown');
@@ -320,7 +320,7 @@ const ok = (cond, name, extra) => {
   };
   // with buttons available: pass m through — handlers receive m as 3rd arg
   sent = [];
-  await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us', args: ['menu'] }));
+  await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us', args: ['browse'] }));
   ok(card && card.title && card.title.includes('📚'), 'button card sent with title', JSON.stringify(card && card.title));
   ok(card && card.text.includes('Tap a row'), 'card invites tapping');
   ok(card && card.footer.includes('AI Mate Assistant'), 'card footer shows new bot name', card && card.footer);
@@ -686,13 +686,13 @@ const ok = (cond, name, extra) => {
 
   /* 15e. full file names + contextual picker button */
   sent = [];
-  await papersCmd.function(sock, mek, mFlag, ctx({ from: 'FN@g.us', args: ['menu'] }));   // root → folders only
+  await papersCmd.function(sock, mek, mFlag, ctx({ from: 'FN@g.us', args: ['browse'] }));   // root → folders only
   ok(cardSent, 'root card sent');
   // NOTE: cardSent flag is stale from earlier — rebind a fresh catcher
   let lastCard = null;
   const mCard = { sendButtonMenu: async (payload) => { lastCard = payload; } };
   lastCard = null;
-  await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN1@g.us', args: ['menu'] }));
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'FN1@g.us', args: ['browse'] }));
   ok(lastCard && lastCard.listTitle.includes('Open a folder'), 'root: picker says "Open a folder"', lastCard && lastCard.listTitle);
 
   lastCard = null;
@@ -718,7 +718,7 @@ const ok = (cond, name, extra) => {
 
   /* 15f. logo only on the main menu card */
   lastCard = null;
-  await papersCmd.function(sock, mek, mCard, ctx({ from: 'LG1@g.us', args: ['menu'] }));   // main menu (root)
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'LG1@g.us', args: ['browse'] }));   // main menu (root)
   ok(lastCard && lastCard.image && String(lastCard.image.url || lastCard.image) === String(config.ALIVE_IMG),
      'main menu card HAS the logo (ALIVE_IMG)', JSON.stringify(lastCard && lastCard.image));
   lastCard = null;
@@ -730,7 +730,7 @@ const ok = (cond, name, extra) => {
 
   /* 15g. custom library name in menus */
   lastCard = null;
-  await papersCmd.function(sock, mek, mCard, ctx({ from: 'RN1@g.us', args: ['menu'] }));
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'RN1@g.us', args: ['browse'] }));
   ok(lastCard && lastCard.title.includes('AI Mate Papers'), 'root card shows custom library name', lastCard && lastCard.title);
   ok(lastCard && !lastCard.title.includes('School Papers'), 'Drive folder name hidden on root card', lastCard && lastCard.title);
   lastCard = null;
@@ -778,14 +778,19 @@ const ok = (cond, name, extra) => {
   const npWc = ((global.__giftedCalls || []).at(-1) || {}).payload || {};
   ok(!!npWc.image && (npWc.text || '').includes('Welcome to *Almate.edu.lk*') &&
      Array.isArray(npWc.buttons) && npWc.buttons.length === 2 &&
-     npWc.buttons[0].id === '.papers menu' && npWc.buttons[0].text.includes('📚') &&
+     npWc.buttons[0].id === '.pp' && npWc.buttons[0].text.includes('📚') &&
      npWc.buttons[1].id === '.ms' && npWc.buttons[1].text.includes('📖') &&
      (npWc.text || '').length < 220,
      "typing 'papers' → short welcome card (alive image + 📚/📖 buttons only)", JSON.stringify({ img: !!npWc.image, btns: npWc.buttons, len: (npWc.text || '').length }));
-  // menu tap → the full main menu card
+  // tap 📚 → the clean year-picker flow
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'NP@g.us', args: ['menu'] }));
-  ok(lastCard && lastCard.title.includes('AI Mate Papers'), "tap 📚 (or '.papers menu') opens the main menu card", lastCard && lastCard.title);
+  ok(lastCard && lastCard.listTitle === '🗓️ Pick a year…', "tap 📚 (or '.pp') opens the year picker", lastCard && lastCard.listTitle);
+  const ppCmd = commands.filter((c) => c.pattern === 'pp').pop();
+  ok(!!ppCmd, '.pp command registered (Past Papers button)');
+  lastCard = null;
+  await ppCmd.function(sock, mek, mCard, ctx({ from: 'NP@g.us' }));
+  ok(lastCard && lastCard.listTitle === '🗓️ Pick a year…', "tap 📚 Past Papers → year question card (clean flow)", lastCard && lastCard.listTitle);
   // 'chemistry past papers' (AI not configured) → LOCAL fallback search
   // still answers with results — the old format engine is the fallback now
   sent = [];
@@ -882,11 +887,11 @@ const ok = (cond, name, extra) => {
 
   // tips adapt to prefix mode
   lastCard = null;
-  await papersCmd.function(sock, mek, mCard, ctx({ from: 'TP@g.us', args: ['menu'] }));
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'TP@g.us', args: ['browse'] }));
   ok(lastCard && !lastCard.text.includes('.paper'), 'tips have NO prefix when no-prefix mode is on', lastCard && lastCard.text.slice(0, 200));
   config.set('PAPERS_NO_PREFIX', 'false');
   lastCard = null;
-  await papersCmd.function(sock, mek, mCard, ctx({ from: 'TP2@g.us', args: ['menu'] }));
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'TP2@g.us', args: ['browse'] }));
   ok(lastCard && lastCard.text.includes('.paper'), 'tips show prefix when mode is off', lastCard && lastCard.text.slice(0, 200));
   config.set('PAPERS_NO_PREFIX', 'true');
 
@@ -983,7 +988,7 @@ require('../plugins/greetings.js');
   ok(lastReply().includes('AI Mate Papers / 2021 / Physics'), 'A is inside Physics');
   // B types ".papers" in the SAME chat → B must see the ROOT, not A's folder
   sent = [];
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['menu'], ...B }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'ISOL@g.us', args: ['browse'], ...B }));
   r = lastReply();
   ok(r.includes('AI Mate Papers*  (page') && r.includes('2020') && r.includes('2021') && !r.includes('/ Physics'),
      'B gets the ROOT menu, not A\'s folder view', r);
@@ -1014,7 +1019,7 @@ require('../plugins/greetings.js');
   await paperCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: ['1'], ...A }));
   ok(lastReply().includes('/ Physics'), 'A is inside Physics again');
   sent = [];
-  await papersCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: ['menu'], ...A }));
+  await papersCmd.function(sock, mek, {}, ctx({ from: 'FR@g.us', args: ['browse'], ...A }));
   r = lastReply();
   ok(r.includes('AI Mate Papers*  (page') && r.includes('2020') && !r.includes('/ Physics'),
      "'.papers menu' resets to the main menu, never last state", r);
@@ -1032,8 +1037,12 @@ require('../plugins/greetings.js');
      "no-prefix 'papers' → welcome image card (menu is one tap away)", JSON.stringify({ img: !!pw.image, t: (pw.text || '').slice(0, 60), hub: !!lastCard }));
   lastCard = null;
   await papersCmd.function(sock, mek, mCard, ctx({ from: 'FR@g.us', args: ['menu'], ...A }));
+  ok(lastCard && lastCard.listTitle === '🗓️ Pick a year…',
+     "'.papers menu' → the clean year-picker flow (no raw folder list)", lastCard && lastCard.listTitle);
+  lastCard = null;
+  await papersCmd.function(sock, mek, mCard, ctx({ from: 'FR@g.us', args: ['browse'], ...A }));
   ok(lastCard && lastCard.title.includes('AI Mate Papers') && !lastCard.text.includes('/ Physics'),
-     "'.papers menu' still resets to the main menu", lastCard && lastCard.title);
+     "'.papers browse' = the legacy folder browser", lastCard && lastCard.title);
 
   /* 15p. tap responses are never quoted (fixes "not supported" for others) */
   const { isTapResponse } = require('../lib/msg');
@@ -1149,7 +1158,7 @@ require('../plugins/greetings.js');
        !gc.text.includes('1️⃣') && !gc.text.includes('2️⃣') && !gc.text.includes('Past Papers'),
        'greeting = Almate welcome card (name) with NO text option list — buttons only', (gc.text || '').slice(0, 140));
     ok(Array.isArray(gc.buttons) && gc.buttons.length === 4 &&
-       gc.buttons[0].id === '.papers menu' && gc.buttons[0].text.includes('📚') &&
+       gc.buttons[0].id === '.pp' && gc.buttons[0].text.includes('📚') &&
        gc.buttons[1].id === '.ms' && gc.buttons[1].text.includes('📖') &&
        gc.buttons[2].id === '.ai' && gc.buttons[2].text.includes('🤖') &&
        gc.buttons[3].id === '.stream' && gc.buttons[3].text.includes('👥'),

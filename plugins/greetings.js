@@ -146,7 +146,7 @@ cmd({
         text: card,
         footer: '🚧 AI Assistant & Stream Group are coming soon!',
         buttons: [
-          { id: '.papers menu', text: '📚 Past Papers' },
+          { id: '.pp', text: '📚 Past Papers' },
           { id: '.ms', text: '📖 Marking Schemes' },
           { id: '.ai', text: '🤖 AI Assistant' },
           { id: '.stream', text: '👥 Stream Group' }
