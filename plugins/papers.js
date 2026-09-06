@@ -587,17 +587,17 @@ async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
   const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
   const nSubs = new Set(cls.map((c) => c.subject).filter(Boolean)).size;
 
-  let msg = '❌ *Paper/Scheme Not Found*\n\nWe could not find this paper in our database.';
+  let msg = `❌ *Paper/Scheme Not Found*\n\nWe couldn't find this paper in our database.`;
   if (cls.length) {
-    msg += `\n\n*Available:*\n` +
+    msg += `\n\nAvailable:\n` +
       `📅 ${years[0]} - ${years[years.length - 1]} Papers\n` +
       `🌐 ${meds.map((m) => MEDIUMS[m].label).join(' | ')}\n` +
       `📚 ${nSubs} A/L Subjects\n\n` +
-      `> To view available subject names: tap the button below 👇`;
+      `> To view available subject names: Click Button below\n"Available Subjects"`;
   }
   if (kindHint) msg += `\n\n${kindHint}`;
   msg += '\n\nPlease check your:\n* Year\n* Language Medium\n* Subject\n\nand try again. ➡️';
-  if (years.length) msg += `\n\n📌 ${years[years.length - 1] + 1} Papers are currently being prepared....`;
+  if (years.length) msg += `\n\n📌${years[years.length - 1] + 1} Papers are currently being prepared....`;
   if (degraded) msg += '\n⚠️ _Saved copy shown — Drive unreachable right now._';
   try {
     await sendButtons(sock, ctx.from, {

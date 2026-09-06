@@ -865,8 +865,10 @@ const ok = (cond, name, extra) => {
   const nf = lastGiftText();
   ok(nf.includes('Paper/Scheme Not Found') && nf.includes('Available:') && nf.includes('A/L Subjects'),
      'not-found card shows the live Available block (years/mediums/subjects)', nf.slice(0, 200));
-  ok(nf.includes('currently being prepared') && nf.includes('2022 Papers'),
-     'not-found card: next year flagged as being prepared (live: max 2021 → 2022)', nf.slice(-160));
+  ok(nf.includes("We couldn't find this paper in our database.") &&
+     nf.includes('Click Button below') && nf.includes('"Available Subjects"') &&
+     nf.includes('📌2022 Papers are currently being prepared....'),
+     'not-found card: EXACT client wording (couldn\'t / Click Button below / 📌year….)', nf.slice(-260));
   ok(nf.includes('2016 - 2021 Papers') && nf.includes('Sinhala | English'),
      'not-found card: year range + mediums are LIVE from the index', nf.slice(0, 260));
   ok(lastGiftButtons().some((b) => b.id === '.subjects' && b.text.includes('Available Subjects')),
@@ -1172,8 +1174,8 @@ require('../plugins/greetings.js');
        gc.buttons[0].id === '.pp' && gc.buttons[0].text.includes('📚') &&
        gc.buttons[1].id === '.ms' && gc.buttons[1].text.includes('📖') &&
        gc.buttons[2].id === '.ai' && gc.buttons[2].text.includes('🤖') &&
-       gc.buttons[3].id === '.stream' && gc.buttons[3].text.includes('👥'),
-       '4 attached buttons with matching emojis (📚 📖 🤖 👥)', JSON.stringify(gc.buttons));
+       gc.buttons[3].id === '.stream' && gc.buttons[3].text.includes('👥') && gc.buttons[3].text.includes('Join A/L Mate Group'),
+       '4 buttons: emojis + Join A/L Mate Group label', JSON.stringify(gc.buttons));
     ok((gc.footer || '').toLowerCase().includes('coming soon'), 'coming-soon note in the footer');
   }
   const papersModZ = require('../plugins/papers');

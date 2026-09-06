@@ -149,7 +149,7 @@ cmd({
           { id: '.pp', text: '📚 Past Papers' },
           { id: '.ms', text: '📖 Marking Schemes' },
           { id: '.ai', text: '🤖 AI Assistant' },
-          { id: '.stream', text: '👥 Stream Group' }
+          { id: '.stream', text: '👥 Join A/L Mate Group' }
         ]
       }, { quoted: mek });
     } catch (e) {
