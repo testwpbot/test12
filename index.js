@@ -279,7 +279,7 @@ async function connectToWA() {
       }
     }
     if (!mek || !mek.message) return;
-    try { require('./lib/botinfo').remember(test.user && test.user.id); } catch (e) { /* optional */ }
+    try { const bi = require('./lib/botinfo'); bi.remember(test.user && test.user.id); bi.remember(test.user && test.user.lid); } catch (e) { /* optional */ }
     if (mek.pushName && mek.key && !mek.key.fromMe) {
       rememberName(mek.key.participant, mek.pushName);
       rememberName(mek.key.participantAlt, mek.pushName);

@@ -1636,6 +1636,20 @@ require('../plugins/greetings.js');
      'FB: tagging SOMEONE ELSE is not the bot → silent');
   ok(fbHandler.filter('done', { sender: tgSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false,
      "FB: plain 'done' → silent");
+  // @lid tag: WhatsApp may encode the mention with a LID instead of the number
+  const mkLid = { key: { fromMe: false, remoteJid: 'ML@g.us' },
+    message: { extendedTextMessage: { text: 'djidj @999988887777666',
+      contextInfo: { mentionedJid: ['999988887777666@lid'] } } } };
+  botinfo16.remember('999988887777666@lid');
+  ok(fbHandler.filter('djidj @999988887777666', { sender: tgSender, message: mkLid }) === true,
+     'FB: @lid-encoded tag of the bot also fires (WhatsApp lid mentions)');
+  // display-name tag: text says "@AI Mate" while the JID data is a lid
+  botinfo16.remember('94776121326@s.whatsapp.net');
+  const mkName = { key: { fromMe: false, remoteJid: 'ML@g.us' },
+    message: { extendedTextMessage: { text: '@AI Mate djidj',
+      contextInfo: { mentionedJid: ['999988887777666@lid'] } } } };
+  ok(fbHandler.filter('@AI Mate djidj', { sender: tgSender, message: mkName }) === true,
+     "FB: '@AI Mate …' display-name tag fires even when JIDs are lids");
   const allNoPrefix = require('../command').replyHandlers.filter((h) => h.noPrefixTriggers === true);
   ok(allNoPrefix.filter((h) => { try { return h.filter('hello', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === true && h.filter('how are you', { sender: mlSender, message: { key: { fromMe: false, remoteJid: 'ML@g.us' } } }) === false; } catch (e) { return false; } }).length >= 1 &&
      fbHandler !== allNoPrefix[0],
