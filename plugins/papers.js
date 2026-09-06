@@ -585,7 +585,7 @@ async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
   const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
   const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
   const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
-  const nSubs = smart.subjectsInIndex(index).length;
+  const nSubs = smart.subjectsInIndex(index).length;   // live: files + folders + unknown-subject folders
 
   let msg = `❌ *Paper/Scheme Not Found*\n\nWe couldn't find this paper in our database.`;
   if (cls.length) {
@@ -619,7 +619,7 @@ function subjectsListMessage(index) {
   const L = [];
   L.push('📚 *Available A/L Subjects*', '');
   L.push(`Our database currently supports *${codes.length}* subjects:`, '');
-  codes.forEach((c, i) => L.push(`${String(i + 1).padStart(2, '0')} – ${SUBJECTS[c].label}`));
+  codes.forEach((c, i) => L.push(`${String(i + 1).padStart(2, '0')} – ${c.label}`));
   if (meds.length) L.push('', '🌐 Available Mediums:', meds.map((m) => MEDIUMS[m].label).join(' | '));
   if (years.length) L.push('', '📅 Available Years:', `${years[0]} - ${years[years.length - 1]}`);
   // a REAL example: an actual (year, medium, subject) combo from the library

@@ -1514,26 +1514,31 @@ require('../plugins/greetings.js');
   {
     const PS16ag = smart;
     // Japanese exists ONLY as a folder name; chem/phy via file names; ICT
-    // only via its Sinhala alias in a file name
-    const invIdx = { root: { name: 'X' }, folders: [{ name: 'Japanese', path: ['X', 'Japanese'] }], files: [
+    // only via its Sinhala alias in a file name; Portuguese = UNKNOWN
+    // subject folder → must still count (vocabulary-independent)
+    const invIdx = { root: { name: 'X' }, folders: [
+      { name: 'Japanese', path: ['X', 'Japanese'] },
+      { name: 'Portuguese', path: ['X', 'Portuguese'] }
+    ], files: [
       { name: '2020_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2020'] },
       { name: '2020_තොරතුරු_තාක්ෂණය.pdf', isFolder: false, path: ['X', '2020'] },
       { name: 'P1.pdf', isFolder: false, path: ['X', '2020', 'Eng Tech'] }
     ] };
     const inv = PS16ag.subjectsInIndex(invIdx);
-    ok(inv.includes('chemistry') && inv.includes('ict') && inv.includes('japanese') && inv.includes('et'),
+    const ikeys = inv.map((e) => e.key);
+    const ilabels = inv.map((e) => e.label);
+    ok(ikeys.includes('chemistry') && ikeys.includes('ict') && ikeys.includes('japanese') && ikeys.includes('et'),
        'inventory: subjects found via folder name, Sinhala alias and path alias', JSON.stringify(inv));
-    ok(!inv.includes('biology') && !inv.includes('sanskrit'),
-       'inventory: absent subjects never invented', JSON.stringify(inv));
+    ok(ilabels.includes('Portuguese'),
+       'inventory: UNKNOWN subject folder still counted+listed (real-time safety net)', JSON.stringify(ilabels));
+    ok(!ikeys.includes('biology') && !ilabels.includes('Biology') && !ilabels.includes('Sinhala'),
+       'inventory: absent subjects and medium words never invented', JSON.stringify(ilabels));
     ffCard = null;
     sent = [];
-    const sbCmd2 = commands.filter((c) => c.pattern === 'subjects').pop();
-    // point the command at our inventory index
-    const origGetIndex2 = sbCmd2 && null;   // (command fetches its own index — assert via exported fn below)
     const listMsg = mmPapers.subjectsListMessage(invIdx);
-    ok(listMsg.includes('supports *4* subjects') && listMsg.includes('Japanese') &&
-       listMsg.includes('Engineering Technology') && listMsg.includes('ICT'),
-       'subjects message count = real-time inventory count (4, incl. folder-only subject)', listMsg.slice(0, 300));
+    ok(listMsg.includes('supports *5* subjects') && listMsg.includes('Japanese') &&
+       listMsg.includes('Engineering Technology') && listMsg.includes('ICT') && listMsg.includes('Portuguese'),
+       'subjects message count = real-time inventory (5, incl. folder-only + unknown subjects)', listMsg.slice(0, 400));
     ok(!listMsg.includes('42 subjects'), 'no hardcoded 42 — count always computed live');
   }
 
