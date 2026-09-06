@@ -585,7 +585,7 @@ async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
   const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
   const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
   const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
-  const nSubs = new Set(cls.map((c) => c.subject).filter(Boolean)).size;
+  const nSubs = smart.subjectsInIndex(index).length;
 
   let msg = `❌ *Paper/Scheme Not Found*\n\nWe couldn't find this paper in our database.`;
   if (cls.length) {
@@ -612,9 +612,8 @@ async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
 
 /** Live "Available Subjects" message — built from the Drive index. */
 function subjectsListMessage(index) {
+  const codes = smart.subjectsInIndex(index);   // real-time: names + folders + paths
   const cls = index && index.files && index.files.length ? [...classifyAll(index).values()] : [];
-  const codes = [...new Set(cls.map((c) => c.subject).filter(Boolean))]
-    .sort((a, b) => String(SUBJECTS[a] ? SUBJECTS[a].label : a).localeCompare(String(SUBJECTS[b] ? SUBJECTS[b].label : b)));
   const years = [...new Set(cls.map((c) => c.year).filter(Number.isFinite))].sort((a, b) => a - b);
   const meds = [...new Set(cls.map((c) => c.medium).filter(Boolean))];
   const L = [];

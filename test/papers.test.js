@@ -1510,6 +1510,33 @@ require('../plugins/greetings.js');
   ok(lastReply().includes('Available A/L Subjects') && lastReply().includes('Our database currently supports'),
      'unknown subject answer → live Available Subjects list (not the old one-liner)', lastReply().slice(0, 90));
 
+  /* 16ag. subject count = REAL-TIME inventory (files + folders + paths) */
+  {
+    const PS16ag = smart;
+    // Japanese exists ONLY as a folder name; chem/phy via file names; ICT
+    // only via its Sinhala alias in a file name
+    const invIdx = { root: { name: 'X' }, folders: [{ name: 'Japanese', path: ['X', 'Japanese'] }], files: [
+      { name: '2020_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2020'] },
+      { name: '2020_තොරතුරු_තාක්ෂණය.pdf', isFolder: false, path: ['X', '2020'] },
+      { name: 'P1.pdf', isFolder: false, path: ['X', '2020', 'Eng Tech'] }
+    ] };
+    const inv = PS16ag.subjectsInIndex(invIdx);
+    ok(inv.includes('chemistry') && inv.includes('ict') && inv.includes('japanese') && inv.includes('et'),
+       'inventory: subjects found via folder name, Sinhala alias and path alias', JSON.stringify(inv));
+    ok(!inv.includes('biology') && !inv.includes('sanskrit'),
+       'inventory: absent subjects never invented', JSON.stringify(inv));
+    ffCard = null;
+    sent = [];
+    const sbCmd2 = commands.filter((c) => c.pattern === 'subjects').pop();
+    // point the command at our inventory index
+    const origGetIndex2 = sbCmd2 && null;   // (command fetches its own index — assert via exported fn below)
+    const listMsg = mmPapers.subjectsListMessage(invIdx);
+    ok(listMsg.includes('supports *4* subjects') && listMsg.includes('Japanese') &&
+       listMsg.includes('Engineering Technology') && listMsg.includes('ICT'),
+       'subjects message count = real-time inventory count (4, incl. folder-only subject)', listMsg.slice(0, 300));
+    ok(!listMsg.includes('42 subjects'), 'no hardcoded 42 — count always computed live');
+  }
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
