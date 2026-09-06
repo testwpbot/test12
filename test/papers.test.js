@@ -326,7 +326,7 @@ const ok = (cond, name, extra) => {
   await papersCmd.function(sock, mek, mWithButtons, ctx({ from: 'BT@g.us', args: ['browse'] }));
   ok(card && card.title && card.title.includes('📚'), 'button card sent with title', JSON.stringify(card && card.title));
   ok(card && card.text.includes('Tap a row'), 'card invites tapping');
-  ok(card && card.footer.includes('AI Mate Assistant'), 'card footer shows new bot name', card && card.footer);
+  ok(card && card.footer.includes('almate.edu.lk/'), 'card footer = almate.edu.lk/ 🇱🇰', card && card.footer);
   const rows = card && card.sections && card.sections[0] && card.sections[0].rows;
   ok(rows && rows[0] && rows[0].id === '.paper 1' && /📁/.test(rows[0].title), 'folder row taps .paper 1', JSON.stringify(rows && rows[0]));
   ok(rows && rows[0] && typeof rows[0].description === 'string' && rows[0].description.includes('Folder'), 'folder row describes itself');
@@ -1176,7 +1176,7 @@ require('../plugins/greetings.js');
        gc.buttons[2].id === '.ai' && gc.buttons[2].text.includes('🤖') &&
        gc.buttons[3].id === '.stream' && gc.buttons[3].text.includes('👥') && gc.buttons[3].text.includes('Join A/L Mate Group'),
        '4 buttons: emojis + Join A/L Mate Group label', JSON.stringify(gc.buttons));
-    ok((gc.footer || '').toLowerCase().includes('almate.edu.lk'), 'welcome card footer = almate.edu.lk');
+    ok((gc.footer || '').includes('almate.edu.lk/') && (gc.footer || '').includes('🇱🇰'), 'welcome card footer = almate.edu.lk/ 🇱🇰');
   }
   const papersModZ = require('../plugins/papers');
   ok(!papersModZ.buildGuide().includes('fwc') && !/provincial/i.test(papersModZ.buildGuide()),

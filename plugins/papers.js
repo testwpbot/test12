@@ -437,7 +437,7 @@ async function showView(sock, mek, m, ctx, view, page, offset = 0, opts = {}) {
           `💡 Tap a row below, or type \`${pfx()}paper <number>\`\n` +
           `🔍 Search everything: \`${pfx()}papers <words>\`${moreHint}` +
           (resolved.degraded ? '\n\n⚠️ _Saved copy — Drive unreachable right now._' : ''),
-        footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+        footer: 'almate.edu.lk/ 🇱🇰',
         listTitle: listTitleFor(resolved),
         sections
       });
@@ -603,7 +603,7 @@ async function paperNotFound(sock, mek, ctx, index, q, degraded, kindHint) {
   try {
     await sendButtons(sock, ctx.from, {
       text: msg,
-      footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+      footer: 'almate.edu.lk/ 🇱🇰',
       buttons: [{ id: `${config.PREFIX}subjects`, text: '📋 Available Subjects' }]
     }, { quoted: mek });
   } catch (e) {
@@ -685,7 +685,7 @@ async function askMissing(sock, mek, m, ctx, st, index) {
       await m.sendButtonMenu({
         title: '',
         text: body,
-        footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+        footer: 'almate.edu.lk/ 🇱🇰',
         listTitle,
         sections
       });
@@ -842,7 +842,7 @@ async function sendPickCard(sock, mek, m, ctx, resolved, listTitle) {
       await m.sendButtonMenu({
         title: '',
         text: body,
-        footer: `${config.BOT_NAME} • 🎓 Educational Assistant`,
+        footer: 'almate.edu.lk/ 🇱🇰',
         listTitle,
         sections
       });
@@ -921,7 +921,7 @@ async function sendPapersWelcome(sock, mek, m, ctx) {
     await sendButtons(sock, ctx.from, {
       image: config.ALIVE_IMG,
       text: card,
-      footer: 'Almate.edu.lk 🇱🇰',
+      footer: 'almate.edu.lk/ 🇱🇰',
       buttons: [
         { id: `${config.PREFIX}pp`, text: '📚 Past Papers' },
         { id: `${config.PREFIX}ms`, text: '📖 Marking Schemes' }

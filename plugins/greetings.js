@@ -144,7 +144,7 @@ cmd({
       // taps arrive as buttonsResponseMessage → body → normal command pipeline
       await sendButtons(sock, ctx.from, {
         text: card,
-        footer: 'almate.edu.lk 🇱🇰',
+        footer: 'almate.edu.lk/ 🇱🇰',
         buttons: [
           { id: '.pp', text: '📚 Past Papers' },
           { id: '.ms', text: '📖 Marking Schemes' },
@@ -191,7 +191,7 @@ cmd({
     // requires. Tapping "Join Now 🚀" opens the group invite directly.
     await sendButtons(sock, ctx.from, {
       text: invite,
-      footer: 'Almate.edu.lk 🇱🇰',
+      footer: 'almate.edu.lk/ 🇱🇰',
       buttons: [{
         name: 'cta_url',
         buttonParamsJson: JSON.stringify({
