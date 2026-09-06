@@ -119,7 +119,7 @@ Module._load = function (request) {
   if (request === 'gifted-btns') {
     return {
       sendButtons: async (s, jid, payload) => { (global.__giftedCalls = global.__giftedCalls || []).push({ jid, payload }); },
-      sendInteractiveMessage: async () => {}
+      sendInteractiveMessage: async (s, jid, payload) => { (global.__giftedInteractive = global.__giftedInteractive || []).push({ jid, payload }); }
     };
   }
   if (request === 'form-data') {
@@ -1390,8 +1390,15 @@ require('../plugins/greetings.js');
   await aiCmd.function(sock, mek, {}, ctx({ from: 'GA@g.us', sender: gaSender }));
   ok(lastReply().includes('COMING SOON'), 'tap 3 (AI Assistant) → coming-soon message', lastReply().slice(0, 60));
   sent = [];
+  global.__giftedInteractive = [];
   await stCmd.function(sock, mek, {}, ctx({ from: 'GA@g.us', sender: gaSender }));
-  ok(lastReply().includes('COMING SOON'), 'tap 4 (Stream Group) → coming-soon message', lastReply().slice(0, 60));
+  const gi = ((global.__giftedInteractive || []).at(-1) || {}).payload || {};
+  ok((gi.text || '').includes('🚀 *Welcome to AI Mate Group!*') && (gi.text || '').includes('Tap below to join now 👇'),
+     'tap 4 (Stream Group) → group invite message', (gi.text || '').slice(0, 90));
+  const giBtn = (gi.buttons || [])[0] || {};
+  ok(giBtn.name === 'cta_url' && String(giBtn.buttonParamsJson || '').includes('chat.whatsapp.com/Ggj1uYwOeyG3d7LEmct7aX') &&
+     String(giBtn.buttonParamsJson || '').includes('Join Now'),
+     "invite carries the 'Join Now 🚀' CTA link button (opens the group directly)", String(giBtn.buttonParamsJson || '').slice(0, 140));
 
   /* 16ad. local knowledge base — conversational asks never meet silence */
   guideGate.reset();

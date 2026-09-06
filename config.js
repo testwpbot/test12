@@ -23,6 +23,7 @@ const SETTINGS = {
   LOG_NUMBER: "94776121326",
   ALIVE_MSG: "*👋 AI Mate Assistant is online — send .papers for past papers! 📚*",
   ALIVE_IMG: "https://github.com/testwpbot/test12/blob/arena/01a06247-test12/images/ai-mate-logo-3.jpeg?raw=true",
+  ALMATE_GROUP_LINK: "https://chat.whatsapp.com/Ggj1uYwOeyG3d7LEmct7aX",
   AUTO_STATUS_SEEN: "true",
   AUTO_STATUS_REACT: "true",
   BLOCK_CALLS: "true",

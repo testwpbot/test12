@@ -6,7 +6,7 @@
  * ─────────────────────────────────────────────────────────────────────── */
 const { cmd } = require('../command');
 const config = require('../config');
-const { sendButtons } = require('../lib/buttons');
+const { sendButtons, sendInteractive } = require('../lib/buttons');
 const guideGate = require('../lib/guidegate');
 
 let settingsPlugin = null;
@@ -144,7 +144,7 @@ cmd({
       // taps arrive as buttonsResponseMessage → body → normal command pipeline
       await sendButtons(sock, ctx.from, {
         text: card,
-        footer: '🚧 AI Assistant & Stream Group are coming soon!',
+        footer: '🚧 AI Assistant is coming soon!',
         buttons: [
           { id: '.pp', text: '📚 Past Papers' },
           { id: '.ms', text: '📖 Marking Schemes' },
@@ -174,9 +174,32 @@ cmd({
 
 cmd({
   pattern: 'stream',
-  desc: 'Join A/L Stream Group (coming soon)',
+  desc: 'Join the AI Mate WhatsApp group',
   category: 'main',
   filename: __filename
 }, async (sock, mek, m, ctx) => {
-  return ctx.reply('👥 *A/L Stream Group* is COMING SOON! 🚧\nThe invite link will be shared here — stay tuned!');
+  const invite =
+    `🚀 *Welcome to AI Mate Group!*\n\n` +
+    `Join our Official WhatsApp community to explore AI tools, get AI Mate support, and connect with other students.\n\n` +
+    `Get AI Past Papers and Paper Schemes instantly\n\n` +
+    `Tap below to join now 👇`;
+  try {
+    // CTA URL button — tapping opens the group invite directly (no reply
+    // message, so no "unsupported bubble" issue for other members)
+    await sendInteractive(sock, ctx.from, {
+      text: invite,
+      footer: 'Almate.edu.lk 🇱🇰',
+      buttons: [{
+        name: 'cta_url',
+        buttonParamsJson: JSON.stringify({
+          display_text: 'Join Now 🚀',
+          url: config.ALMATE_GROUP_LINK,
+          merchant_url: config.ALMATE_GROUP_LINK
+        })
+      }]
+    }, { quoted: mek });
+  } catch (e) {
+    // fallback: the plain link still opens/preview-taps the group
+    await ctx.reply(`${invite}\n\n${config.ALMATE_GROUP_LINK}`);
+  }
 });
