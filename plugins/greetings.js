@@ -7,6 +7,7 @@
 const { cmd } = require('../command');
 const config = require('../config');
 const { buildGuide } = require('./papers');
+const guideGate = require('../lib/guidegate');
 
 let settingsPlugin = null;
 try { settingsPlugin = require('./settings'); } catch (e) { /* optional */ }
@@ -96,6 +97,9 @@ cmd({
   }
 }, async (sock, mek, m, ctx) => {
   try {
+    // anti-spam: one greeting per student per gap (default 6h) — shared
+    // with the papers guide so neither is repeated inside the window
+    if (guideGate.recent(ctx)) return;
     const name = String(mek.pushName || '').split(/\s+/)[0];
     const hello = name ? `👋 *Hello, ${name}!*` : '👋 *Hello!*';
     await ctx.reply(
@@ -103,6 +107,7 @@ cmd({
       `I send A/L *past papers, FWC, provincial papers & marking schemes* 📚\n\n` +
       buildGuide()
     );
+    guideGate.mark(ctx);
   } catch (e) {
     console.error('greeting reply error:', (e && e.message) || e);
   }

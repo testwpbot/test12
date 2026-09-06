@@ -1128,6 +1128,32 @@ require('../plugins/greetings.js');
   ok(papersModZ.buildGuide().includes('fwc') && papersModZ.buildGuide().includes('marking scheme'),
      'buildGuide includes collections');
 
+  /* 15aa. guide/greeting anti-spam memory (GUIDE_GAP_HOURS) */
+  const guideGate = require('../lib/guidegate');
+  guideGate.reset();   // default GUIDE_GAP_HOURS = 6 is already active
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'first "i want papers" → guide sent');
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.length === 0, 'repeat within the gap → silent (no spam)', JSON.stringify(sent));
+  sent = [];
+  await greetH.function(sock, mek, mCard, { from: 'SP1@g.us', body: 'hello', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.length === 0, 'greeting also suppressed in the window (shared memory)');
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111102@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'a different student still gets the guide');
+  config.set('GUIDE_GAP_HOURS', '0');
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'gap 0 = memory off, always replies');
+  config.set('GUIDE_GAP_HOURS', '6');
+  ok(config.SETTINGS_META.GUIDE_GAP_HOURS.validate('24') === true &&
+     config.SETTINGS_META.GUIDE_GAP_HOURS.validate('0') === true &&
+     typeof config.SETTINGS_META.GUIDE_GAP_HOURS.validate('abc') === 'string',
+     'GUIDE_GAP_HOURS setting validates 0-72 hours');
+  guideGate.reset();
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

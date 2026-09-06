@@ -39,6 +39,7 @@ const SETTINGS = {
   PAPERS_ROOT_NAME: "AI Mate Papers",
   PAPERS_NO_PREFIX: "true",
   WORK_MODE: "group",
+  GUIDE_GAP_HOURS: "6",
   WELCOME_NEW_MEMBERS: "true",
   WELCOME_MSG: "*👋 Welcome, {name}! 🎓*\n*You're in {group} 📖*\n*🤖 I'm {bot} — type papers to grab past papers.*"
 };
@@ -181,6 +182,13 @@ const SETTINGS_META = {
     desc: 'Shown in the .papers menu instead of the Drive folder name',
     type: 'text',
     validate: (v) => (v.length <= 40 ? true : 'Keep it under 40 characters.')
+  },
+  GUIDE_GAP_HOURS: {
+    label: 'Guide repeat gap (hours)',
+    desc: 'Minimum gap between greeting/guide messages per student (0 = always)',
+    type: 'text',
+    validate: (v) => (/^\d+$/.test(String(v).trim()) && Number(v) <= 72
+      ? true : 'Use hours between 0 and 72 (0 = always reply).')
   },
   WORK_MODE: {
     label: 'Bot working mode',

@@ -20,6 +20,7 @@ const config = require('../config');
 const gdrive = require('../lib/gdrive');
 const smart = require('../lib/papersearch');
 const { isTapResponse } = require('../lib/msg');
+const guideGate = require('../lib/guidegate');
 const { parsePaperQuery, matchPaper, SUBJECTS, MEDIUMS, CATEGORIES, TYPE_WORDS, classifyFileName, subjectFromTokens, classifyAll } = require('../lib/papersearch');
 
 /* ── tunables ────────────────────────────────────────────────────────── */
@@ -730,6 +731,9 @@ function buildGuide() {
   );
 }
 function usageGuide(ctx) {
+  // anti-spam: one guide per student per gap (default 6h, GUIDE_GAP_HOURS)
+  if (guideGate.recent(ctx)) return;
+  guideGate.mark(ctx);
   return ctx.reply(buildGuide());
 }
 
@@ -1222,8 +1226,17 @@ cmd({
     if (!rootId()) {
       return ctx.reply('📚 Past papers are not set up yet — the admin is on it! 🛠️');
     }
-    // acknowledge the student's message
-    try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
+    // acknowledge the student's message — but stay FULLY silent for repeat
+    // guide-asks inside the anti-spam window (no react, no guide)
+    const earlyBody = String(ctx.body || '');
+    const earlyDims = dimsFromText(earlyBody);
+    const earlyParsed = parsePaperQuery(earlyBody);
+    const guideCandidate = !interviews[skey(ctx)] &&
+      !(earlyParsed && earlyParsed.year && (earlyParsed.subject || earlyParsed.medium)) &&
+      !earlyDims.subject && !earlyDims.year;
+    if (!(guideCandidate && guideGate.recent(ctx))) {
+      try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
+    }
 
     const body = String(ctx.body || '').toLowerCase().replace(/\u200D/g, '')
       .replace(/[^\p{L}\p{M}\p{N}\s/]+/gu, ' ')
