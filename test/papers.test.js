@@ -1390,15 +1390,17 @@ require('../plugins/greetings.js');
   await aiCmd.function(sock, mek, {}, ctx({ from: 'GA@g.us', sender: gaSender }));
   ok(lastReply().includes('COMING SOON'), 'tap 3 (AI Assistant) → coming-soon message', lastReply().slice(0, 60));
   sent = [];
-  global.__giftedInteractive = [];
   await stCmd.function(sock, mek, {}, ctx({ from: 'GA@g.us', sender: gaSender }));
-  const gi = ((global.__giftedInteractive || []).at(-1) || {}).payload || {};
-  ok((gi.text || '').includes('🚀 *Welcome to AI Mate Group!*') && (gi.text || '').includes('Tap below to join now 👇'),
-     'tap 4 (Stream Group) → group invite message', (gi.text || '').slice(0, 90));
-  const giBtn = (gi.buttons || [])[0] || {};
+  const giSend = sent.find((s) => s.content && s.content.viewOnceMessage) || {};
+  const giMsg = (((giSend.content || {}).viewOnceMessage || {}).message || {}).interactiveMessage || {};
+  const giBtns = (((giMsg.nativeFlowMessage || {}).buttons) || []);
+  ok((giMsg.body || {}).text && giMsg.body.text.includes('🚀 *Welcome to AI Mate Group!*') &&
+     giMsg.body.text.includes('Tap below to join now 👇'),
+     'tap 4 (Stream Group) → group invite message', (giMsg.body || {}).text && giMsg.body.text.slice(0, 90));
+  const giBtn = giBtns[0] || {};
   ok(giBtn.name === 'cta_url' && String(giBtn.buttonParamsJson || '').includes('chat.whatsapp.com/Ggj1uYwOeyG3d7LEmct7aX') &&
      String(giBtn.buttonParamsJson || '').includes('Join Now'),
-     "invite carries the 'Join Now 🚀' CTA link button (opens the group directly)", String(giBtn.buttonParamsJson || '').slice(0, 140));
+     "invite carries the native 'Join Now 🚀' CTA link button (opens the group directly)", String(giBtn.buttonParamsJson || '').slice(0, 140));
 
   /* 16ad. local knowledge base — conversational asks never meet silence */
   guideGate.reset();

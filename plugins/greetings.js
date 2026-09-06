@@ -6,7 +6,7 @@
  * ─────────────────────────────────────────────────────────────────────── */
 const { cmd } = require('../command');
 const config = require('../config');
-const { sendButtons, sendInteractive } = require('../lib/buttons');
+const { sendButtons } = require('../lib/buttons');
 const guideGate = require('../lib/guidegate');
 
 let settingsPlugin = null;
@@ -184,22 +184,34 @@ cmd({
     `Get AI Past Papers and Paper Schemes instantly\n\n` +
     `Tap below to join now 👇`;
   try {
-    // CTA URL button — tapping opens the group invite directly (no reply
-    // message, so no "unsupported bubble" issue for other members)
-    await sendInteractive(sock, ctx.from, {
-      text: invite,
-      footer: 'Almate.edu.lk 🇱🇰',
-      buttons: [{
-        name: 'cta_url',
-        buttonParamsJson: JSON.stringify({
-          display_text: 'Join Now 🚀',
-          url: config.ALMATE_GROUP_LINK,
-          merchant_url: config.ALMATE_GROUP_LINK
-        })
-      }]
+    // CTA URL button built NATIVELY with Baileys (no wrapper guessing):
+    // tapping "Join Now 🚀" opens the group invite directly on the
+    // student's phone — no reply message, nothing unsupported
+    await sock.sendMessage(ctx.from, {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+          interactiveMessage: {
+            contextInfo: { externalAdReply: { showAdAttribution: false } },
+            body: { text: invite },
+            footer: { text: 'Almate.edu.lk 🇱🇰' },
+            nativeFlowMessage: {
+              buttons: [{
+                name: 'cta_url',
+                buttonParamsJson: JSON.stringify({
+                  display_text: 'Join Now 🚀',
+                  url: config.ALMATE_GROUP_LINK,
+                  merchant_url: config.ALMATE_GROUP_LINK
+                })
+              }]
+            }
+          }
+        }
+      }
     }, { quoted: mek });
   } catch (e) {
     // fallback: the plain link still opens/preview-taps the group
+    console.error('stream invite button failed:', (e && e.message) || e);
     await ctx.reply(`${invite}\n\n${config.ALMATE_GROUP_LINK}`);
   }
 });
