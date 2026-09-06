@@ -677,7 +677,7 @@ const ok = (cond, name, extra) => {
   global.AI_INTERPRET = '{"action":"none"}';
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'FF4@g.us', body: 'this paper is hard', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('How to ask'), "AI 'none' → usage guide reply", sent.map((s) => s.reply).join('').slice(0, 80));
+  ok(sent.map((s) => s.reply).join('').includes('Getting your paper is easy'), "AI 'none' → usage guide reply", sent.map((s) => s.reply).join('').slice(0, 80));
   // AI down → local keyword fallback still answers
   global.AI_DOWN = true;
   delete global.AI_INTERPRET;
@@ -1197,11 +1197,11 @@ require('../plugins/greetings.js');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   const fullGuide = sent.map((s) => s.reply).join('');
-  ok(fullGuide.includes('How to ask') && fullGuide.includes('Short terms') && fullGuide.includes('marking scheme') && !fullGuide.includes('fwc'),
+  ok(fullGuide.includes('Getting your paper is easy') && fullGuide.includes('Quick names') && fullGuide.includes('marking scheme') && !fullGuide.includes('fwc'),
      'first "i want papers" → FULL exact how-to-ask guide (collections removed)');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('How to ask'),
+  ok(sent.map((s) => s.reply).join('').includes('Getting your paper is easy'),
      'repeat "i want papers" → guide sent AGAIN (generic asks are never remembered)');
   ok((await greetCapture('hello', 'SP1@g.us', '94779111101@s.whatsapp.net')).includes('Hello'),
      'greeting still works after guide asks (per-word memory only)');
@@ -1209,11 +1209,11 @@ require('../plugins/greetings.js');
      'same greeting word twice in the window → second silent');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('How to ask'),
+  ok(sent.map((s) => s.reply).join('').includes('Getting your paper is easy'),
      'guide NEVER suppressed — even right after a greeting');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111102@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'a different student still gets the guide');
+  ok(sent.map((s) => s.reply).join('').includes('Getting your paper is easy'), 'a different student still gets the guide');
   config.set('GUIDE_GAP_HOURS', '0');
   ok((await greetCapture('hello', 'SPG@g.us', '94779111103@s.whatsapp.net')).includes('Hello') &&
      (await greetCapture('hello', 'SPG@g.us', '94779111103@s.whatsapp.net')).includes('Hello'),
@@ -1366,7 +1366,7 @@ require('../plugins/greetings.js');
   ok(!ffCard, "'papers' → welcome card (buttons), not the raw menu");
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'RC@g.us', body: 'i want papers', sender: rcSender, reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.map((s) => s.reply).join('').includes('How to ask') && reacts().includes('📚'),
+  ok(sent.map((s) => s.reply).join('').includes('Getting your paper is easy') && reacts().includes('📚'),
      'repeat guide-ask → guide AGAIN + 📚 react (never remembered, always acked)', JSON.stringify({ r: sent.map((s) => String(s.reply).slice(0, 40)), x: reacts() }));
 
   /* 16ac. exact generic asks never remembered + welcome-card tap commands */
@@ -1381,7 +1381,7 @@ require('../plugins/greetings.js');
     sent = [];
     await npFF.function(sock, mek, ffM, { from: 'GA@g.us', body: t, sender: gaSender, reply: async (x) => { sent.push({ reply: x }); } });
     const g2 = sent.map((s) => s.reply).join('');
-    ok(g1.includes('How to ask') && g2.includes('How to ask'),
+    ok(g1.includes('Getting your paper is easy') && g2.includes('Getting your paper is easy'),
        `"${t}" → full guide BOTH times (never remembered)`, JSON.stringify({ g1: g1.slice(0, 60), g2: g2.slice(0, 60) }));
   }
   const msCmd = commands.filter((c) => c.pattern === 'ms').pop();
@@ -1430,16 +1430,16 @@ require('../plugins/greetings.js');
   r = await kbSay('do you have marking schemes?');
   ok(r.includes('Yes') && r.includes('marking schemes'), "KB: 'do you have marking schemes?' → availability");
   r = await kbSay('i need papers?');
-  ok(r.includes('How to ask') && r.includes('2016 chemistry sinhala medium'),
+  ok(r.includes('Getting your paper is easy') && r.includes('2016 chemistry sinhala medium'),
      "KB: 'i need papers?' → full how-to-ask guide (every time)");
   const again = await kbSay('i need papers?');
-  ok(again.includes('How to ask'), "KB: 'i need papers?' again → guide AGAIN (never remembered)");
+  ok(again.includes('Getting your paper is easy'), "KB: 'i need papers?' again → guide AGAIN (never remembered)");
   r = await kbSay('paper thiyenawada?');
   ok(r.includes('Yes'), "KB: Sinhala 'paper thiyenawada?' → availability");
   r = await kbSay('ඕන් පත්තරයෙක්');
-  ok(r.includes('How to ask'), "KB: 'ඕන් පත්තරයෙක්' → guide");
+  ok(r.includes('Getting your paper is easy'), "KB: 'ඕන් පත්තරයෙක්' → guide");
   r = await kbSay('paper venum');
-  ok(r.includes('How to ask'), "KB: Tamil 'paper venum' → guide");
+  ok(r.includes('Getting your paper is easy'), "KB: Tamil 'paper venum' → guide");
   r = await kbSay('do you have chemistry papers?');
   ok(ffCard && ffCard.listTitle === '🗓️ Pick a year…',
      "KB: 'do you have chemistry papers?' has a subject → interview (not the availability text)", ffCard && ffCard.listTitle);

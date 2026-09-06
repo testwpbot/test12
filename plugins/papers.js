@@ -799,15 +799,15 @@ function parseInterviewAnswer(body) {
 /** The reusable "how to ask" guide text (greetings + usage + fallbacks). */
 function buildGuide() {
   const words = Object.values(SUBJECTS).map((s) => s.label);
-  const shorts = 'chem • phy • bio • com maths • agri • econ • bs • acc • ict • et • sft • bst • stat';
+  const shorts = 'chem, phy, bio, com maths, agri, econ, bs, acc, ict, et, sft';
   return (
-    `📖 *How to ask for a paper*\n\n` +
-    `Type: *Year + Subject + Medium*\n` +
-    `Example: *2016 chemistry sinhala medium*\n\n` +
-    `🔤 Short terms: ${shorts}\n` +
-    `🌐 Mediums: sinhala • english • tamil\n` +
-    `📦 Also: *marking scheme / answer sheet*\n\n` +
-    `📚 Or send *papers* to browse the full menu (${words.length} subjects)`
+    `📖 *Getting your paper is easy!*\n\n` +
+    `Just type it in this order:\n` +
+    `📅 Year  📘 Subject  🌐 Medium\n\n` +
+    `For example: *2016 chemistry sinhala medium*\n\n` +
+    `✨ Quick names work best: ${shorts}\n` +
+    `🎯 Need answers too? Add *marking scheme* or *answer sheet*\n` +
+    `📚 Or simply send *papers* and explore the full library (${words.length} subjects)`
   );
 }
 function usageGuide(ctx) {
