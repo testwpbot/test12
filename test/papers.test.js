@@ -1147,7 +1147,13 @@ require('../plugins/greetings.js');
   ok(sent.length === 0, 'repeat within the gap → silent (no spam)', JSON.stringify(sent));
   sent = [];
   await greetH.function(sock, mek, mCard, { from: 'SP1@g.us', body: 'hello', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
-  ok(sent.length === 0, 'greeting also suppressed in the window (shared memory)');
+  ok(sent.map((s) => s.reply).join('').includes('Hello'), 'greeting after a full guide still greets (per-word memory)');
+  sent = [];
+  await greetH.function(sock, mek, mCard, { from: 'SP1@g.us', body: 'hello', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.length === 0, 'same greeting word twice in the window → second silent');
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111101@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+  ok(sent.length === 0, 'full guide stays suppressed after a greeting (shared protection)');
   sent = [];
   await npFF.function(sock, mek, ffM, { from: 'SP1@g.us', body: 'i want papers', sender: '94779111102@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
   ok(sent.map((s) => s.reply).join('').includes('How to ask'), 'a different student still gets the guide');
@@ -1277,6 +1283,37 @@ require('../plugins/greetings.js');
   await mmNP.function(sock, mek, ffM, { from: 'MM2@g.us', body: 'hello', sender: '94779444402@s.whatsapp.net', reply: async () => {} });
   ok(!mmPapers.__interviews[ttlKey] || mmPapers.__interviews[ttlKey].length === 0,
      'MM2: memory cleaned after 24 h — stale request forgotten');
+
+  /* 16aa. per-greeting-word memory — "hello" once, "hi" greets again */
+  guideGate.reset();
+  const pwSay = async (body, snd) => {
+    sent = [];
+    await greetH.function(sock, mek, mCard, { from: 'PW@g.us', body, sender: snd || '94779555501@s.whatsapp.net', reply: async (t) => { sent.push({ reply: t }); } });
+    return sent.map((s) => s.reply).join('');
+  };
+  ok((await pwSay('hello')).includes('Hello'), 'PW: hello → greeting sent');
+  ok((await pwSay('hello')) === '', 'PW: second hello → silent');
+  ok((await pwSay('hi')).includes('Hello'), "PW: 'hi' greets again (different word)", 'hi silent!');
+  ok((await pwSay('hi')) === '', "PW: second 'hi' → silent");
+  ok((await pwSay('hiii')) === '', 'PW: hiii = hi family → silent');
+  ok((await pwSay('හලෝ')) === '', 'PW: හලෝ = hello family → silent');
+  ok((await pwSay('good morning')).includes('Hello'), "PW: 'good morning' greets (new word)");
+  ok((await pwSay('gm')) === '', 'PW: gm = morning family → silent');
+  ok((await pwSay('hey')).includes('Hello'), "PW: 'hey' greets (new word)");
+  ok((await pwSay('hello', '94779555502@s.whatsapp.net')).includes('Hello'), 'PW: another student gets their own hello greeting');
+
+  /* 16ab. 📚 react consistency — anything that replies ALWAYS reacts (groups + inbox) */
+  guideGate.reset();
+  const rcSender = '94779555503@s.whatsapp.net';
+  await greetH.function(sock, mek, mCard, { from: 'RC@g.us', body: 'hello', sender: rcSender, reply: async () => {} });   // fills the shared anti-spam window
+  ffCard = null;
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'RC@g.us', body: 'papers', sender: rcSender, reply: async () => {} });
+  ok(reacts().includes('📚'), "'papers' reacts 📚 even inside the anti-spam window (menu always replies → always ack)", JSON.stringify(reacts()));
+  ok(!!ffCard, "'papers' still opens the fresh main menu");
+  sent = [];
+  await npFF.function(sock, mek, ffM, { from: 'RC@g.us', body: 'i want papers', sender: rcSender, reply: async () => {} });
+  ok(sent.length === 0, 'silent repeat guide-ask: no reply AND no react (consistent silence)', JSON.stringify(sent));
 
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

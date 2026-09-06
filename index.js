@@ -433,7 +433,7 @@ const quoted = type == 'extendedTextMessage' && mek.message.extendedTextMessage.
     if (isCmd) {
       const cmd = commands.find((c) => c.pattern === commandName || (c.alias && c.alias.includes(commandName)));
       if (cmd) {
-        if (cmd.react) test.sendMessage(from, { react: { text: cmd.react, key: mek.key } });
+        if (cmd.react) test.sendMessage(from, { react: { text: cmd.react, key: mek.key } }).catch(() => {});
         try {
           cmd.function(test, mek, m, {
             from, quoted: mek, body, isCmd, command: commandName, args, q,

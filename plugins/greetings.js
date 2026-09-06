@@ -21,6 +21,35 @@ const GREET_WORDS = new Set([
   'bro', 'machan', 'aiya', 'sir', 'team', 'all'
 ]);
 
+// Greetings that MEAN the same share one memory family: "hiii" ≈ "hi",
+// "හලෝ" ≈ "hello", "gm" ≈ "good morning". Each DISTINCT greeting word
+// greets once per window — but its elongations/translations do not
+// re-greet (that would feel like spam).
+const GREET_FAMILY = {
+  'hi': 'hi', 'hii': 'hi', 'hiii': 'hi', 'hai': 'hi',
+  'hello': 'hello', 'helo': 'hello', 'halo': 'hello', 'hlo': 'hello',
+  'හලෝ': 'hello', 'හෙලෝ': 'hello', 'හල්ලෝ': 'hello',
+  'hey': 'hey',
+  'ayubowan': 'ayubowan', 'aubowan': 'ayubowan', 'aayubowan': 'ayubowan',
+  'ආයුබෝවන්': 'ayubowan', 'ආයුබෝ': 'ayubowan',
+  'vanakkam': 'vanakkam', 'வணக்கம்': 'vanakkam',
+  'morning': 'morning', 'gm': 'morning',
+  'afternoon': 'afternoon', 'evening': 'evening', 'night': 'night', 'gn': 'night',
+  'bro': 'bro', 'machan': 'machan', 'aiya': 'aiya', 'sir': 'sir', 'team': 'team', 'all': 'all'
+};
+
+/** Canonical greeting family of a message ("hiii bro" → "hi"). */
+const greetFamilyOf = (text) => {
+  const toks = stripMentionTokens(text).toLowerCase().replace(/\u200D/g, '')
+    .replace(/[^\p{L}\p{M}\p{N}\s]+/gu, ' ').split(/\s+/).filter(Boolean);
+  for (const t of toks) {
+    if (t === 'good') continue;                        // "good morning" → morning
+    if (GREET_FAMILY[t]) return GREET_FAMILY[t];
+    if (GREET_WORDS.has(t)) return t;                  // unseen greeting word → itself
+  }
+  return 'hello';
+};
+
 const digitsOf = (j) => String(j || '').split('@')[0].replace(/[^0-9]/g, '');
 
 /** Every number that counts as "the bot itself". */
@@ -97,9 +126,11 @@ cmd({
   }
 }, async (sock, mek, m, ctx) => {
   try {
-    // anti-spam: one greeting per student per gap (default 6h) — shared
-    // with the papers guide so neither is repeated inside the window
-    if (guideGate.recent(ctx)) return;
+    // per-WORD anti-spam memory: "hello" greets once, a second "hello" is
+    // silent, but a DIFFERENT greeting ("hi", "ayubowan", …) greets again.
+    // Each word once per gap (default 6h).
+    const fam = greetFamilyOf(String(ctx.body || ''));
+    if (guideGate.recent(ctx, fam)) return;
     const name = String(mek.pushName || '').split(/\s+/)[0];
     const hello = name ? `👋 *Hello, ${name}!*` : '👋 *Hello!*';
     await ctx.reply(
@@ -107,7 +138,8 @@ cmd({
       `I send A/L *past papers, FWC, provincial papers & marking schemes* 📚\n\n` +
       buildShortGuide()
     );
-    guideGate.mark(ctx);
+    guideGate.mark(ctx, fam);   // this greeting word
+    guideGate.mark(ctx);        // shared slot: the full guide stays quiet after any greeting
   } catch (e) {
     console.error('greeting reply error:', (e && e.message) || e);
   }

@@ -1294,10 +1294,19 @@ cmd({
     const earlyBody = String(ctx.body || '');
     const earlyDims = dimsFromText(earlyBody);
     const earlyParsed = parsePaperQuery(earlyBody);
+    // 📚 react = "seen" ack. It must ALWAYS appear when the bot is about to
+    // reply — groups included (a reply without the react looks broken).
+    // Skip it ONLY for a fully-silent repeat guide-ask (no reply either).
+    const earlyNorm = String(ctx.body || '').toLowerCase().replace(/\u200D/g, '')
+      .replace(/[^\p{L}\p{M}\p{N}\s/]+/gu, ' ').replace(/\s+/g, ' ').trim();
+    const earlyToks = earlyNorm.split(' ').filter(Boolean);
+    const hubAsk = ['papers', 'pastpapers', 'pastpaper', 'alpastpapers', 'alpapers']
+      .includes(earlyNorm.replace(/\s+/g, '')) ||
+      earlyToks[0] === 'papers' || earlyToks[0] === 'paper';
     const guideCandidate = ivList(skey(ctx)).length === 0 &&
       !(earlyParsed && earlyParsed.year && (earlyParsed.subject || earlyParsed.medium)) &&
       !earlyDims.subject && !earlyDims.year;
-    if (!(guideCandidate && guideGate.recent(ctx))) {
+    if (hubAsk || !guideCandidate || !guideGate.recent(ctx)) {
       try { await sock.sendMessage(ctx.from, { react: { text: '📚', key: mek.key } }); } catch (e) { /* optional */ }
     }
 
