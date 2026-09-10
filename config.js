@@ -24,8 +24,6 @@ const SETTINGS = {
   ALIVE_MSG: "*👋 AI Mate Assistant is online — send .papers for past papers! 📚*",
   ALIVE_IMG: "https://github.com/testwpbot/test12/blob/arena/01a06247-test12/images/ai-mate-logo-3.jpeg?raw=true",
   ALMATE_GROUP_LINK: "https://chat.whatsapp.com/Ggj1uYwOeyG3d7LEmct7aX",
-  AUTO_STATUS_SEEN: "true",
-  AUTO_STATUS_REACT: "true",
   BLOCK_CALLS: "true",
   BLOCK_CALLS_MSG: "📵 Sorry, calls are not allowed on this number. Please send a text message instead.",
   GDRIVE_API_KEY: "AIzaSyDphsADXHXqzYGjd1snF2gy2P9xGcOiBEo",
@@ -99,16 +97,6 @@ const SETTINGS_META = {
     desc: 'Image URL used by .alive and the startup ping',
     type: 'url',
     validate: (v) => (/^https?:\/\/.+/i.test(v) ? true : 'Must start with http:// or https://')
-  },
-  AUTO_STATUS_SEEN: {
-    label: 'Auto status seen',
-    desc: 'Auto-mark contacts’ statuses as seen',
-    type: 'boolean'
-  },
-  AUTO_STATUS_REACT: {
-    label: 'Auto status react',
-    desc: 'Auto-react with a random emoji to statuses',
-    type: 'boolean'
   },
   BLOCK_CALLS: {
     label: 'Block calls',

@@ -121,7 +121,6 @@ async function applyChange(m, key, rawValue) {
   if (result.key === "PREFIX") note = `\n\nℹ️ Commands now start with \`${result.value}\`.`;
   if (result.key === "BOT_OWNER") note = `\n\n⚠️ Owner number changed — \`.settings\` now answers to \`${result.value}\`.`;
   if (result.key === "LOG_NUMBER") note = `\n\nℹ️ Startup pings and status forwards now go to \`${result.value}\`.`;
-  if (result.key === "AUTO_STATUS_SEEN") note = `\n\nℹ️ Auto status seen is now *${config.isEnabled("AUTO_STATUS_SEEN") ? "ON" : "OFF"}*.`;
   if (result.key === "AUTO_STATUS_REACT") note = `\n\nℹ️ Auto status react is now *${config.isEnabled("AUTO_STATUS_REACT") ? "ON" : "OFF"}*.`;
 
   await m.reply(`✅ *${result.key}* updated\n┃ Old: \`${displayValue(result.key, result.previous, "text", 60)}\`\n┃ New: \`${displayValue(result.key, result.value, "text", 60)}\`${note}`);
