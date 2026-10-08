@@ -1682,6 +1682,35 @@ require('../plugins/greetings.js');
      'FB: pending request + unmatched text → still total silence (interview owns the turn)',
      JSON.stringify({ ivs: (mmPapers.__interviews['ML@g.us:' + mlSender] || []).map((s) => [s.id, s.subject, s.year]) }));
 
+  /* 16ak. scheme next to the question paper — never "not found" (client case) */
+  guideGate.reset();
+  global.AI_INTERPRET = '';
+  smart.geminiReset();
+  const spSender = '94779555513@s.whatsapp.net';
+  const spIdx = { root: { name: 'X' }, folders: [], files: [
+    { name: '2019_Art_Sinhala.pdf', isFolder: false, path: ['X', '2019'] },
+    { name: '2019-Art-Sinhala-Scheme.pdf', isFolder: false, path: ['X', '2019'] },
+    { name: '2020-Chemistry-Sinhala-MS.pdf', isFolder: false, path: ['X', '2020'] },
+    { name: '2020_Chemistry_Sinhala.pdf', isFolder: false, path: ['X', '2020'] }
+  ] };
+  mmPapers.__setIndex(spIdx);   // serve OUR library (plain + Scheme pairs)
+  const spAsk = async (body) => {
+    sent = []; ffCard = null; global.__giftedCalls = [];
+    await mlNP.function(sock, mek, ffM, { from: 'SP9@g.us', body, sender: spSender, reply: async (t) => { sent.push({ reply: t }); } });
+    return lastGiftText();
+  };
+  let sp = await spAsk('2019 art sinhala marking scheme');
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('2019-Art-Sinhala-Scheme.pdf'),
+     'SP: marking ask with the Scheme file present → delivers THE SCHEME (not the paper, not not-found)', JSON.stringify(ffCard && ffCard.sections));
+  sp = await spAsk('2020 chemistry sinhala scheme');
+  ok(ffCard && ffCard.sections[0].rows[0].title.includes('2020-Chemistry-Sinhala-MS.pdf'),
+     "SP: '...MS' style filenames classify as marking schemes", JSON.stringify(ffCard && ffCard.sections));
+  sp = await spAsk('2019 art sinhala');
+  ok(ffCard && ffCard.sections[0].rows.length === 1 &&
+     ffCard.sections[0].rows[0].title.includes('2019_Art_Sinhala.pdf'),
+     'SP: PLAIN ask with both files present → still the plain paper only (strict types)', JSON.stringify(ffCard && ffCard.sections));
+
   /* 16. extractId */
   assert.strictEqual(gdrive.extractId('https://drive.google.com/drive/folders/1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');
   assert.strictEqual(gdrive.extractId('1AbCdefGHIJKLMnopQRS'), '1AbCdefGHIJKLMnopQRS');

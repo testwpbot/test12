@@ -1650,6 +1650,7 @@ module.exports = {
   buildGuide, usageGuide, fmtSize, cleanName, mimeFor, fileNameFor,
   __interviews: interviews,
   __fallback: fallbackCmd,
+  __setIndex: (index) => { cache = { at: Date.now(), building: null, index }; },
   subjectsListMessage,
   __askMissing: askMissing,
   searchFiles: (index, query) => smart.searchIndex(index, query).items
